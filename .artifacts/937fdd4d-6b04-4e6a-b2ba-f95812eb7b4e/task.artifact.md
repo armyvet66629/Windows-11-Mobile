@@ -1,0 +1,3 @@
+- [x] Wrap HomeHeader content in FluentSurface in `HomeScreen.kt`
+- [x] Adjust padding and text colors for better contrast
+- [x] Verify build passes

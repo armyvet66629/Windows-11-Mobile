@@ -1,0 +1,84 @@
+package com.example.windows11mobile.ui.settings
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import com.example.windows11mobile.data.AppInfo
+import com.example.windows11mobile.data.AppRepository
+import com.example.windows11mobile.data.SettingsRepository
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+
+class SettingsViewModel(
+    private val repository: SettingsRepository,
+    private val appRepository: AppRepository
+) : ViewModel() {
+
+    val isDarkMode: StateFlow<Boolean?> = repository.isDarkMode
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val wallpaperUri: StateFlow<String?> = repository.wallpaperUri
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val pinnedApps: StateFlow<Set<String>> = repository.pinnedApps
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
+
+    val tileOpacity: StateFlow<Float> = repository.tileOpacity
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.25f)
+
+    private val _installedApps = MutableStateFlow<List<AppInfo>>(emptyList())
+    val installedApps = _installedApps.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            _installedApps.value = appRepository.getInstalledApps()
+        }
+    }
+
+    fun setDarkMode(isDarkMode: Boolean) {
+        viewModelScope.launch {
+            repository.setDarkMode(isDarkMode)
+        }
+    }
+
+    fun setWallpaperUri(uri: String) {
+        viewModelScope.launch {
+            repository.setWallpaperUri(uri)
+        }
+    }
+
+    fun setTileOpacity(opacity: Float) {
+        viewModelScope.launch {
+            repository.setTileOpacity(opacity)
+        }
+    }
+
+    fun pinApp(packageName: String) {
+        viewModelScope.launch {
+            repository.pinApp(packageName)
+        }
+    }
+
+    fun unpinApp(packageName: String) {
+        viewModelScope.launch {
+            repository.unpinApp(packageName)
+        }
+    }
+}
+
+class SettingsViewModelFactory(
+    private val repository: SettingsRepository,
+    private val appRepository: AppRepository
+) : ViewModelProvider.Factory {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        if (modelClass.isAssignableFrom(SettingsViewModel::class.java)) {
+            @Suppress("UNCHECKED_CAST")
+            return SettingsViewModel(repository, appRepository) as T
+        }
+        throw IllegalArgumentException("Unknown ViewModel class")
+    }
+}

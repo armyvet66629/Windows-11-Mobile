@@ -1,0 +1,4 @@
+<resources>
+
+    <style name="Theme.Windows11Mobile" parent="Theme.MaterialComponents.Light" />
+</resources>
