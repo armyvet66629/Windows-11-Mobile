@@ -30,6 +30,21 @@ class SettingsViewModel(
     val tileOpacity: StateFlow<Float> = repository.tileOpacity
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.25f)
 
+    val weatherAppPackage: StateFlow<String?> = repository.weatherAppPackage
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val accentColor: StateFlow<Int> = repository.accentColor
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SettingsRepository.DEFAULT_ACCENT_COLOR)
+
+    val useFahrenheit: StateFlow<Boolean> = repository.useFahrenheit
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    val showTaskbar: StateFlow<Boolean> = repository.showTaskbar
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    val pageOrder: StateFlow<List<String>> = repository.pageOrder
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SettingsRepository.DEFAULT_PAGE_ORDER)
+
     private val _installedApps = MutableStateFlow<List<AppInfo>>(emptyList())
     val installedApps = _installedApps.asStateFlow()
 
@@ -66,6 +81,36 @@ class SettingsViewModel(
     fun unpinApp(packageName: String) {
         viewModelScope.launch {
             repository.unpinApp(packageName)
+        }
+    }
+
+    fun setWeatherAppPackage(packageName: String?) {
+        viewModelScope.launch {
+            repository.setWeatherAppPackage(packageName)
+        }
+    }
+
+    fun setAccentColor(color: Int) {
+        viewModelScope.launch {
+            repository.setAccentColor(color)
+        }
+    }
+
+    fun setUseFahrenheit(useFahrenheit: Boolean) {
+        viewModelScope.launch {
+            repository.setUseFahrenheit(useFahrenheit)
+        }
+    }
+
+    fun setShowTaskbar(show: Boolean) {
+        viewModelScope.launch {
+            repository.setShowTaskbar(show)
+        }
+    }
+
+    fun setPageOrder(order: List<String>) {
+        viewModelScope.launch {
+            repository.setPageOrder(order)
         }
     }
 }

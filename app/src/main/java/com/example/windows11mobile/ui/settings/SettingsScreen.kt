@@ -5,10 +5,12 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -41,8 +43,15 @@ fun SettingsScreen(
     val wallpaperUri by viewModel.wallpaperUri.collectAsStateWithLifecycle()
     val pinnedApps by viewModel.pinnedApps.collectAsStateWithLifecycle()
     val installedApps by viewModel.installedApps.collectAsStateWithLifecycle()
+    val weatherAppPackage by viewModel.weatherAppPackage.collectAsStateWithLifecycle()
+    val useFahrenheit by viewModel.useFahrenheit.collectAsStateWithLifecycle()
+    val showTaskbar by viewModel.showTaskbar.collectAsStateWithLifecycle()
+    val pageOrder by viewModel.pageOrder.collectAsStateWithLifecycle()
+    val tileOpacity by viewModel.tileOpacity.collectAsStateWithLifecycle()
     
     var showAddAppDialog by remember { mutableStateOf(false) }
+    var showWeatherPicker by remember { mutableStateOf(false) }
+    var showPageManager by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
     val launcher = rememberLauncherForActivityResult(
@@ -65,9 +74,24 @@ fun SettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Settings", fontWeight = FontWeight.SemiBold) },
+                title = { 
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(32.dp))
+                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f))
+                            .padding(horizontal = 24.dp, vertical = 8.dp)
+                    ) {
+                        Text("Settings", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
+                    }
+                },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(
+                        onClick = onBack,
+                        modifier = Modifier
+                            .padding(start = 8.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f))
+                    ) {
                         Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
                     }
                 },
@@ -75,7 +99,8 @@ fun SettingsScreen(
                     containerColor = Color.Transparent,
                     titleContentColor = MaterialTheme.colorScheme.onSurface,
                     navigationIconContentColor = MaterialTheme.colorScheme.onSurface
-                )
+                ),
+                modifier = Modifier.statusBarsPadding()
             )
         },
         containerColor = Color.Transparent
@@ -88,13 +113,20 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
-                Text(
-                    "Personalization",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary, // Higher contrast
-                    modifier = Modifier.padding(vertical = 8.dp)
-                )
+                Box(
+                    modifier = Modifier
+                        .padding(vertical = 12.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f))
+                        .padding(horizontal = 20.dp, vertical = 10.dp)
+                ) {
+                    Text(
+                        "Personalization",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Black,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                }
             }
 
             // Dark Mode Toggle
@@ -104,8 +136,63 @@ fun SettingsScreen(
                     subtitle = "Switch between light and dark theme",
                     icon = if (isDarkMode == true) Icons.Rounded.DarkMode else Icons.Rounded.LightMode,
                     checked = isDarkMode ?: false,
+                    tileOpacity = tileOpacity,
                     onCheckedChange = { viewModel.setDarkMode(it) }
                 )
+            }
+
+            // Accent Color Picker
+            item {
+                val accentColorInt by viewModel.accentColor.collectAsStateWithLifecycle()
+                val colors = listOf(
+                    0xFF0078D4, // Windows Blue
+                    0xFF4A4EDD, // Cobalt
+                    0xFF00B294, // Teal
+                    0xFF10893E, // Green
+                    0xFFD83B01, // Orange
+                    0xFFE81123, // Red
+                    0xFFB4009E, // Purple
+                    0xFF5D5A58  // Grey
+                ).map { it.toInt() }
+
+                FluentSurface(
+                    modifier = Modifier.fillMaxWidth(),
+                    alpha = tileOpacity,
+                    effect = com.example.windows11mobile.ui.components.FluentEffect.ACRYLIC,
+                    blurRadius = 80,
+                    tintColor = Color.Black.copy(alpha = 0.15f),
+                    luminosityAlpha = 0.1f,
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Rounded.Palette, contentDescription = null, modifier = Modifier.size(24.dp))
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Text("Accent Color", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            colors.forEach { colorInt ->
+                                val color = Color(colorInt)
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(CircleShape)
+                                        .background(color)
+                                        .border(
+                                            width = if (accentColorInt == colorInt) 3.dp else 0.dp,
+                                            color = if (accentColorInt == colorInt) MaterialTheme.colorScheme.onSurface else Color.Transparent,
+                                            shape = CircleShape
+                                        )
+                                        .clickable { viewModel.setAccentColor(colorInt) }
+                                )
+                            }
+                        }
+                    }
+                }
             }
 
             // Wallpaper Picker
@@ -114,6 +201,7 @@ fun SettingsScreen(
                     title = "Wallpaper",
                     subtitle = "Change the launcher background image",
                     icon = Icons.Rounded.Wallpaper,
+                    tileOpacity = tileOpacity,
                     onClick = {
                         launcher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                     }
@@ -132,14 +220,41 @@ fun SettingsScreen(
                 }
             }
 
+            // Default Weather App
+            item {
+                val selectedAppName = remember(weatherAppPackage, installedApps) {
+                    if (weatherAppPackage == "web") "Web Search"
+                    else installedApps.find { it.packageName == weatherAppPackage }?.name ?: "Not Set"
+                }
+                SettingsClickableItem(
+                    title = "Default Weather App",
+                    subtitle = "Currently: $selectedAppName",
+                    icon = Icons.Rounded.Cloud,
+                    tileOpacity = tileOpacity,
+                    onClick = { showWeatherPicker = true }
+                )
+            }
+
+            item {
+                SettingsToggleItem(
+                    title = "Use Fahrenheit",
+                    subtitle = "Toggle between Celsius and Fahrenheit",
+                    icon = Icons.Rounded.Thermostat,
+                    checked = useFahrenheit,
+                    tileOpacity = tileOpacity,
+                    onCheckedChange = { viewModel.setUseFahrenheit(it) }
+                )
+            }
+
             // Tile Opacity Slider
             item {
-                val tileOpacity by viewModel.tileOpacity.collectAsStateWithLifecycle()
                 FluentSurface(
                     modifier = Modifier.fillMaxWidth(),
-                    alpha = 0.3f,
+                    alpha = tileOpacity,
                     effect = com.example.windows11mobile.ui.components.FluentEffect.ACRYLIC,
-                    blurRadius = 30,
+                    blurRadius = 80,
+                    tintColor = Color.Black.copy(alpha = 0.15f),
+                    luminosityAlpha = 0.1f,
                     shape = RoundedCornerShape(16.dp)
                 ) {
                     Column(
@@ -153,13 +268,13 @@ fun SettingsScreen(
                         ) {
                             Icon(Icons.Rounded.Opacity, contentDescription = null, modifier = Modifier.size(24.dp))
                             Spacer(modifier = Modifier.width(16.dp))
-                            Text("Tile Opacity", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                            Text("Tile Opacity", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                             Spacer(modifier = Modifier.weight(1f))
                             Text(
                                 text = "${(tileOpacity * 100).toInt()}%",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.Bold
+                                style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.onBackground,
+                                fontWeight = FontWeight.Black
                             )
                         }
                         
@@ -181,54 +296,197 @@ fun SettingsScreen(
             }
 
             item {
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    "System",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary, // Higher contrast
-                    modifier = Modifier.padding(vertical = 8.dp)
-                )
+                Spacer(modifier = Modifier.height(24.dp))
+                Box(
+                    modifier = Modifier
+                        .padding(vertical = 12.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f))
+                        .padding(horizontal = 20.dp, vertical = 10.dp)
+                ) {
+                    Text(
+                        "Launcher Settings",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Black,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                }
             }
 
             item {
                 SettingsClickableItem(
-                    title = "Enable Live Tiles (Notifications)",
-                    subtitle = "Allow the launcher to show notifications on tiles",
-                    icon = Icons.Rounded.NotificationsActive,
+                    title = "Set as Default Launcher",
+                    subtitle = "Assign Windows 11 Mobile as your primary home screen",
+                    icon = Icons.Rounded.Home,
+                    tileOpacity = tileOpacity,
                     onClick = {
-                        context.startActivity(Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                        try {
+                            val intent = Intent(android.provider.Settings.ACTION_HOME_SETTINGS)
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            // Fallback for older Android versions
+                            val intent = Intent(android.provider.Settings.ACTION_SETTINGS)
+                            context.startActivity(intent)
+                        }
+                    }
+                )
+            }
+
+            item {
+                Spacer(modifier = Modifier.height(24.dp))
+                Box(
+                    modifier = Modifier
+                        .padding(vertical = 12.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f))
+                        .padding(horizontal = 20.dp, vertical = 10.dp)
+                ) {
+                    Text(
+                        "System",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Black,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                }
+            }
+
+            item {
+                val isNotificationServiceEnabled = remember(context) {
+                    val enabledPackages = android.provider.Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners")
+                    enabledPackages?.contains(context.packageName) == true
+                }
+                
+                SettingsClickableItem(
+                    title = "Enable Live Tiles (Notifications)",
+                    subtitle = if (isNotificationServiceEnabled) "Active • Receiving live updates" else "Inactive • Tap to grant access",
+                    icon = if (isNotificationServiceEnabled) Icons.Rounded.NotificationsActive else Icons.Rounded.NotificationsPaused,
+                    tileOpacity = tileOpacity,
+                    onClick = {
+                        try {
+                            context.startActivity(Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                            // Hint to the user
+                            android.widget.Toast.makeText(context, "Please toggle 'Windows 11 Mobile' OFF and then ON if already enabled.", android.widget.Toast.LENGTH_LONG).show()
+                        } catch (e: Exception) {
+                            // Fallback
+                        }
+                    },
+                    trailingContent = {
+                        if (isNotificationServiceEnabled) {
+                            Icon(Icons.Rounded.CheckCircle, contentDescription = "Active", tint = Color(0xFF2ECC71))
+                        } else {
+                            Icon(Icons.Rounded.Warning, contentDescription = "Required", tint = MaterialTheme.colorScheme.error)
+                        }
                     }
                 )
             }
 
             item {
                 SettingsClickableItem(
-                    title = "About",
-                    subtitle = "Windows 11 Mobile Launcher v1.0",
-                    icon = Icons.Rounded.Info,
-                    onClick = {}
+                    title = "Battery Optimization",
+                    subtitle = "Recommended: Disable for reliable Live Tiles",
+                    icon = Icons.Rounded.BatteryChargingFull,
+                    tileOpacity = tileOpacity,
+                    onClick = {
+                        try {
+                            val intent = Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                            context.startActivity(intent)
+                        } catch (e: Exception) {}
+                    }
                 )
             }
 
             item {
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    "Taskbar & Dock",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary, // Higher contrast
-                    modifier = Modifier.padding(vertical = 8.dp)
+                Spacer(modifier = Modifier.height(24.dp))
+                Box(
+                    modifier = Modifier
+                        .padding(vertical = 12.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f))
+                        .padding(horizontal = 20.dp, vertical = 10.dp)
+                ) {
+                    Text(
+                        "Launcher Settings",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Black,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                }
+            }
+
+            item {
+                SettingsClickableItem(
+                    title = "Set as Default Launcher",
+                    subtitle = "Assign Windows 11 Mobile as your primary home screen",
+                    icon = Icons.Rounded.Home,
+                    tileOpacity = tileOpacity,
+                    onClick = {
+                        try {
+                            val intent = Intent(android.provider.Settings.ACTION_HOME_SETTINGS)
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            // Fallback for older Android versions
+                            val intent = Intent(android.provider.Settings.ACTION_SETTINGS)
+                            context.startActivity(intent)
+                        }
+                    }
                 )
             }
 
             item {
-                Text(
-                    "Pinned Apps",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(bottom = 8.dp)
+                Spacer(modifier = Modifier.height(24.dp))
+                Box(
+                    modifier = Modifier
+                        .padding(vertical = 12.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f))
+                        .padding(horizontal = 20.dp, vertical = 10.dp)
+                ) {
+                    Text(
+                        "Taskbar & Dock",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Black,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                }
+            }
+
+            item {
+                SettingsToggleItem(
+                    title = "Show Taskbar",
+                    subtitle = "Display quick-access app icons at the bottom",
+                    icon = Icons.Rounded.WebAsset,
+                    checked = showTaskbar,
+                    tileOpacity = tileOpacity,
+                    onCheckedChange = { viewModel.setShowTaskbar(it) }
                 )
+            }
+
+            item {
+                SettingsClickableItem(
+                    title = "Page Manager",
+                    subtitle = "Manage home screen pages and their order",
+                    icon = Icons.Rounded.Layers,
+                    tileOpacity = tileOpacity,
+                    onClick = { showPageManager = true }
+                )
+            }
+
+            item {
+                Spacer(modifier = Modifier.height(8.dp))
+                Box(
+                    modifier = Modifier
+                        .padding(bottom = 12.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.35f))
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        "Pinned Apps",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                }
             }
 
             val pinnedAppsList = pinnedApps.toList()
@@ -237,6 +495,7 @@ fun SettingsScreen(
                 PinnedAppItem(
                     appInfo = appInfo,
                     packageName = packageName,
+                    tileOpacity = tileOpacity,
                     onUnpin = { viewModel.unpinApp(packageName) }
                 )
             }
@@ -267,21 +526,195 @@ fun SettingsScreen(
             }
         )
     }
+
+    if (showWeatherPicker) {
+        WeatherAppPickerDialog(
+            apps = installedApps,
+            onDismiss = { showWeatherPicker = false },
+            onAppSelect = { pkg ->
+                viewModel.setWeatherAppPackage(pkg)
+                showWeatherPicker = false
+            }
+        )
+    }
+
+    if (showPageManager) {
+        PageManagerDialog(
+            currentOrder = pageOrder,
+            onDismiss = { showPageManager = false },
+            onOrderChange = { viewModel.setPageOrder(it) }
+        )
+    }
+}
+
+@Composable
+fun PageManagerDialog(
+    currentOrder: List<String>,
+    onDismiss: () -> Unit,
+    onOrderChange: (List<String>) -> Unit
+) {
+    var tempOrder by remember { mutableStateOf(currentOrder) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Manage Pages", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Rearrange your screens by moving them up or down.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+
+                tempOrder.forEachIndexed { index, pageId ->
+                    val pageName = when(pageId) {
+                        "notes" -> "Notes"
+                        "board" -> "Widgets & News"
+                        "desktop" -> "Start Screen"
+                        "apps" -> "App List"
+                        "people" -> "People Hub"
+                        else -> pageId
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(pageName, fontWeight = FontWeight.Bold)
+                        Row {
+                            IconButton(
+                                onClick = {
+                                    if (index > 0) {
+                                        val mutable = tempOrder.toMutableList()
+                                        val item = mutable.removeAt(index)
+                                        mutable.add(index - 1, item)
+                                        tempOrder = mutable
+                                    }
+                                },
+                                enabled = index > 0,
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(Icons.Rounded.KeyboardArrowUp, contentDescription = "Move Up")
+                            }
+                            IconButton(
+                                onClick = {
+                                    if (index < tempOrder.size - 1) {
+                                        val mutable = tempOrder.toMutableList()
+                                        val item = mutable.removeAt(index)
+                                        mutable.add(index + 1, item)
+                                        tempOrder = mutable
+                                    }
+                                },
+                                enabled = index < tempOrder.size - 1,
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = "Move Down")
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                onOrderChange(tempOrder)
+                onDismiss()
+            }) {
+                Text("Save Changes")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+        shape = RoundedCornerShape(24.dp)
+    )
+}
+
+@Composable
+fun WeatherAppPickerDialog(
+    apps: List<AppInfo>,
+    onDismiss: () -> Unit,
+    onAppSelect: (String) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Choose Weather App", fontWeight = FontWeight.Bold) },
+        text = {
+            Box(modifier = Modifier.heightIn(max = 400.dp)) {
+                LazyColumn {
+                    val weatherApps = apps.filter { 
+                        it.name.contains("Weather", ignoreCase = true) || 
+                        it.packageName.contains("weather", ignoreCase = true) 
+                    }
+                    items(weatherApps) { app ->
+                        ListItem(
+                            headlineContent = { Text(app.name, fontWeight = FontWeight.SemiBold) },
+                            leadingContent = {
+                                val icon = remember(app.icon) { 
+                                    app.icon?.let { d ->
+                                        try {
+                                            val width = if (d.intrinsicWidth > 0) d.intrinsicWidth else 512
+                                            val height = if (d.intrinsicHeight > 0) d.intrinsicHeight else 512
+                                            val bitmap = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
+                                            val canvas = android.graphics.Canvas(bitmap)
+                                            d.setBounds(0, 0, canvas.width, canvas.height)
+                                            d.draw(canvas)
+                                            bitmap.asImageBitmap()
+                                        } catch (e: Exception) { null }
+                                    }
+                                }
+                                if (icon != null) {
+                                    androidx.compose.foundation.Image(
+                                        bitmap = icon,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(32.dp).clip(RoundedCornerShape(4.dp))
+                                    )
+                                }
+                            },
+                            modifier = Modifier.clickable { onAppSelect(app.packageName) }
+                        )
+                    }
+                    item {
+                        ListItem(
+                            headlineContent = { Text("Web Search (Default)", color = MaterialTheme.colorScheme.primary) },
+                            leadingContent = { Icon(Icons.Rounded.Language, contentDescription = null) },
+                            modifier = Modifier.clickable { onAppSelect("web") }
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+        shape = RoundedCornerShape(24.dp)
+    )
 }
 
 @Composable
 fun PinnedAppItem(
     appInfo: AppInfo?,
     packageName: String,
+    tileOpacity: Float = 0.3f,
     onUnpin: () -> Unit
 ) {
     FluentSurface(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp),
-        alpha = 0.3f,
+        alpha = tileOpacity,
         effect = com.example.windows11mobile.ui.components.FluentEffect.ACRYLIC,
-        blurRadius = 30,
+        blurRadius = 120,
+        tintColor = Color.Black.copy(alpha = 0.15f),
+        luminosityAlpha = 0.12f,
         shape = RoundedCornerShape(16.dp)
     ) {
         Row(
@@ -316,14 +749,16 @@ fun PinnedAppItem(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = appInfo?.name ?: packageName,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 if (appInfo != null) {
                     Text(
                         text = packageName,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                        fontWeight = FontWeight.SemiBold
                     )
                 }
             }
@@ -397,13 +832,16 @@ fun SettingsToggleItem(
     subtitle: String,
     icon: ImageVector,
     checked: Boolean,
+    tileOpacity: Float = 0.3f,
     onCheckedChange: (Boolean) -> Unit
 ) {
     FluentSurface(
         modifier = Modifier.fillMaxWidth(),
-        alpha = 0.3f,
+        alpha = tileOpacity,
         effect = com.example.windows11mobile.ui.components.FluentEffect.ACRYLIC,
-        blurRadius = 30,
+        blurRadius = 120,
+        tintColor = Color.Black.copy(alpha = 0.2f),
+        luminosityAlpha = 0.15f,
         shape = RoundedCornerShape(16.dp)
     ) {
         Row(
@@ -419,8 +857,8 @@ fun SettingsToggleItem(
             )
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f), fontWeight = FontWeight.SemiBold)
             }
             Switch(
                 checked = checked, 
@@ -439,15 +877,18 @@ fun SettingsClickableItem(
     subtitle: String,
     icon: ImageVector,
     onClick: () -> Unit,
+    tileOpacity: Float = 0.3f,
     trailingContent: @Composable (() -> Unit)? = null
 ) {
     FluentSurface(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        alpha = 0.3f,
+        alpha = tileOpacity,
         effect = com.example.windows11mobile.ui.components.FluentEffect.ACRYLIC,
-        blurRadius = 30,
+        blurRadius = 120,
+        tintColor = Color.Black.copy(alpha = 0.2f),
+        luminosityAlpha = 0.15f,
         shape = RoundedCornerShape(16.dp)
     ) {
         Row(
@@ -463,8 +904,8 @@ fun SettingsClickableItem(
             )
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f), fontWeight = FontWeight.SemiBold)
             }
             if (trailingContent != null) {
                 trailingContent()

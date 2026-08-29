@@ -25,8 +25,13 @@ object FluentIcons {
     val Calendar = Icons.Rounded.CalendarToday
     val Photos = Icons.Rounded.PhotoLibrary
     val Weather = Icons.Rounded.WbSunny
+    val Call = Icons.Rounded.Call
     val Edit = Icons.Rounded.Edit
     val Delete = Icons.Rounded.Delete
+    val Uninstall = Icons.Rounded.DeleteForever
+    val Share = Icons.Rounded.Share
+    val Star = Icons.Rounded.Star
+    val Refresh = Icons.Rounded.Refresh
     val Pin = Icons.Rounded.PushPin
     val Unpin = Icons.Rounded.PushPin // Should be unpin icon
     val Widgets = Icons.Rounded.Widgets

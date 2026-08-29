@@ -1,5 +1,7 @@
 package com.example.windows11mobile.ui.components
 
+import android.content.Intent
+import android.net.Uri
 import android.content.pm.ShortcutInfo
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -17,6 +19,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -45,275 +48,334 @@ fun AdvancedFluentMenu(
     onMoveTile: () -> Unit = {},
     onAppSettings: () -> Unit,
     onCheckForUpdates: () -> Unit = {},
+    onUninstall: () -> Unit = {},
+    onShare: () -> Unit = {},
+    onRefreshTile: () -> Unit = {},
+    onClearNotifications: () -> Unit = {},
+    onRename: () -> Unit = {},
     shortcuts: List<ShortcutInfo> = emptyList(),
     onShortcutClick: (ShortcutInfo) -> Unit = {},
     modifier: Modifier = Modifier,
     tileOpacity: Float = 0.45f
 ) {
     val context = LocalContext.current
-    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-    // Ensure higher contrast in light mode
-    val effectiveAlpha = if (isDark) tileOpacity else 0.85f
-    
     val appIcon = remember(tile.packageName) {
         tile.packageName?.let { pkg ->
             try { context.packageManager.getApplicationIcon(pkg) } catch (_: Exception) { null }
         }
     }
 
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .clickable(onClick = onDismiss, interactionSource = null, indication = null),
-        contentAlignment = Alignment.Center
+    FluentContextMenu(
+        isVisible = true,
+        title = tile.label,
+        subtitle = tile.packageName ?: "App Widget",
+        icon = appIcon,
+        onDismiss = onDismiss
     ) {
-        // Smoke Overlay for Modal Dimming
-        Box(
+        // Quick Actions Row (New Windows 11 Style)
+        Row(
             modifier = Modifier
-                .fillMaxSize()
-                .background(if (isDark) SmokeDark else SmokeLight)
-        )
-
-        FluentSurface(
-            modifier = Modifier
-                .width(340.dp)
-                .heightIn(max = 600.dp)
-                .padding(16.dp)
-                .clickable(enabled = false) {}, // Consume clicks on the menu itself
-            shape = RoundedCornerShape(32.dp),
-            alpha = effectiveAlpha,
-            effect = FluentEffect.ACRYLIC,
-            blurRadius = 60
+                .fillMaxWidth()
+                .padding(bottom = 20.dp),
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            val scrollState = rememberScrollState()
-            Column(
+            QuickActionButton(
+                icon = if (tile.isWidget) FluentIcons.Delete else FluentIcons.Pin,
+                contentDescription = "Pin/Unpin",
+                onClick = onRemove
+            )
+            QuickActionButton(
+                icon = FluentIcons.Share,
+                contentDescription = "Share",
+                onClick = onShare
+            )
+            if (!tile.isWidget && tile.specialType == null) {
+                QuickActionButton(
+                    icon = FluentIcons.Uninstall,
+                    contentDescription = "Uninstall",
+                    tint = MaterialTheme.colorScheme.error,
+                    onClick = onUninstall
+                )
+            }
+            QuickActionButton(
+                icon = FluentIcons.Info,
+                contentDescription = "App Info",
+                onClick = onAppSettings
+            )
+        }
+
+        // Notification Section
+        if (tile.notificationCount > 0) {
+            FluentSurface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .verticalScroll(scrollState)
-                    .padding(24.dp)
+                    .padding(bottom = 20.dp),
+                shape = RoundedCornerShape(18.dp),
+                alpha = 0.2f,
+                effect = FluentEffect.MICA,
+                blurRadius = 0,
+                borderAlpha = 0.15f
             ) {
-                // Header
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(bottom = 20.dp)
-                ) {
-                    if (appIcon != null) {
-                        AsyncImage(
-                            model = appIcon,
-                            contentDescription = null,
-                            modifier = Modifier.size(52.dp)
-                                .shadow(if (!isDark) 4.dp else 0.dp, CircleShape)
-                        )
-                    } else {
-                        Box(
-                            modifier = Modifier
-                                .size(52.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primaryContainer),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(FluentIcons.Apps, contentDescription = null, modifier = Modifier.size(28.dp))
-                        }
-                    }
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column {
-                        Text(
-                            text = tile.label,
-                            style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.SemiBold, // Authentic Segoe UI Variable Semibold
-                            color = MaterialTheme.colorScheme.onSurface,
-                            letterSpacing = (-0.5).sp
-                        )
-                        Text(
-                            text = tile.packageName ?: "App Widget",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (isDark) 0.6f else 0.8f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-
-                // Notification Section
-                if (tile.notificationCount > 0) {
-                    FluentSurface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 20.dp),
-                        shape = RoundedCornerShape(18.dp),
-                        alpha = 0.2f,
-                        effect = FluentEffect.MICA,
-                        blurRadius = 0,
-                        borderAlpha = 0.15f
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = tile.notificationSender ?: "Notification",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                val timeStr = remember(tile.notificationTime) {
-                                    if (tile.notificationTime != null && tile.notificationTime > 0) {
-                                        val sdf = SimpleDateFormat("h:mm a", Locale.getDefault())
-                                        sdf.format(Date(tile.notificationTime))
-                                    } else ""
-                                }
-                                Text(
-                                    text = timeStr,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                text = tile.notificationContent ?: tile.notificationSummary ?: "",
-                                style = MaterialTheme.typography.bodyMedium,
-                                maxLines = 4,
-                                overflow = TextOverflow.Ellipsis,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f)
-                            )
-                            
-                            Spacer(modifier = Modifier.height(16.dp))
-                            
-                            // Reply Box placeholder
-                            OutlinedTextField(
-                                value = "",
-                                onValueChange = {},
-                                placeholder = { Text("Reply to notification...", fontSize = 13.sp) },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(52.dp),
-                                shape = RoundedCornerShape(14.dp),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    unfocusedContainerColor = Color.White.copy(alpha = 0.05f),
-                                    focusedContainerColor = Color.White.copy(alpha = 0.1f),
-                                    unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
-                                    focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
-                                ),
-                                trailingIcon = {
-                                    IconButton(onClick = {}) {
-                                        Icon(
-                                            Icons.Rounded.Send, 
-                                            contentDescription = "Send", 
-                                            modifier = Modifier.size(20.dp),
-                                            tint = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
-                                },
-                                singleLine = true,
-                                readOnly = true // As it's a context menu interaction placeholder
-                            )
-                        }
-                    }
-                }
-
-                // Resize Quick Actions
-                Text(
-                    text = "RESIZE MODE",
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    letterSpacing = 1.5.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                    modifier = Modifier.padding(bottom = 12.dp)
-                )
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 24.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    ResizeButton(TileSize.SMALL, currentSize = tile.size, modifier = Modifier.weight(1f), onClick = { onResize(TileSize.SMALL) })
-                    ResizeButton(TileSize.MEDIUM, currentSize = tile.size, modifier = Modifier.weight(1f), onClick = { onResize(TileSize.MEDIUM) })
-                    ResizeButton(TileSize.WIDE, currentSize = tile.size, modifier = Modifier.weight(1f), onClick = { onResize(TileSize.WIDE) })
-                    ResizeButton(TileSize.LARGE, currentSize = tile.size, modifier = Modifier.weight(1f), onClick = { onResize(TileSize.LARGE) })
-                }
-
-                HorizontalDivider(modifier = Modifier.padding(bottom = 16.dp), color = Color.White.copy(alpha = 0.1f))
-
-                // Shortcuts Section
-                if (shortcuts.isNotEmpty()) {
-                    Text(
-                        text = "SHORTCUTS",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        letterSpacing = 1.5.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                        modifier = Modifier.padding(bottom = 12.dp)
-                    )
-                    
-                    shortcuts.forEach { shortcut ->
-                        val label = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N_MR1) {
-                            shortcut.shortLabel ?: shortcut.longLabel ?: "Shortcut"
-                        } else {
-                            "Shortcut"
-                        }
-                        
-                        val shortcutIcon = remember(shortcut) {
-                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N_MR1) {
-                                try {
-                                    val launcherApps = context.getSystemService(android.content.Context.LAUNCHER_APPS_SERVICE) as android.content.pm.LauncherApps
-                                    launcherApps.getShortcutIconDrawable(shortcut, context.resources.displayMetrics.densityDpi)
-                                } catch (_: Exception) {
-                                    null
-                                }
-                            } else null
-                        }
-
-                        ShortcutActionButton(
-                            text = label.toString(),
-                            icon = shortcutIcon,
-                            onClick = { 
-                                onShortcutClick(shortcut)
-                                onDismiss()
-                            }
+                        Text(
+                            text = tile.notificationSender ?: "Notification",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
-                        Spacer(modifier = Modifier.height(10.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            val timeStr = remember(tile.notificationTime) {
+                                if (tile.notificationTime != null && tile.notificationTime > 0) {
+                                    val sdf = SimpleDateFormat("h:mm a", Locale.getDefault())
+                                    sdf.format(Date(tile.notificationTime))
+                                } else ""
+                            }
+                            Text(
+                                text = timeStr,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            IconButton(
+                                onClick = onClearNotifications,
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    FluentIcons.Close,
+                                    contentDescription = "Clear",
+                                    modifier = Modifier.size(14.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
                     }
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.1f))
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = tile.notificationContent ?: tile.notificationSummary ?: "",
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 4,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f)
+                    )
                 }
+            }
+        }
 
-                // Action Buttons
+        // Category-Specific Actions
+        val pkg = tile.packageName?.lowercase() ?: ""
+        when {
+            tile.specialType == HomeTile.TYPE_WEATHER || tile.specialType == HomeTile.TYPE_CLOCK_WEATHER -> {
                 ActionButton(
-                    text = "Move Tile",
-                    icon = FluentIcons.Open,
+                    text = "Change Location",
+                    icon = FluentIcons.Search,
+                    onClick = { /* Implement in ViewModel */ }
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                ActionButton(
+                    text = "Refresh Weather",
+                    icon = FluentIcons.Refresh,
+                    onClick = onRefreshTile
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.1f))
+            }
+            tile.specialType == HomeTile.TYPE_PHOTOS -> {
+                ActionButton(
+                    text = "Choose Albums",
+                    icon = FluentIcons.Photos,
+                    onClick = { /* Implement */ }
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.1f))
+            }
+            pkg.contains("dialer") || pkg.contains("phone") -> {
+                ActionButton(
+                    text = "New Call",
+                    icon = FluentIcons.Call,
                     onClick = {
-                        onMoveTile()
+                        try {
+                            val intent = Intent(Intent.ACTION_DIAL)
+                            context.startActivity(intent)
+                        } catch (e: Exception) {}
                         onDismiss()
                     }
                 )
                 Spacer(modifier = Modifier.height(10.dp))
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.1f))
+            }
+            pkg.contains("messaging") || pkg.contains("message") || pkg.contains("sms") -> {
                 ActionButton(
-                    text = "Check for Updates",
-                    icon = FluentIcons.Search,
-                    onClick = onCheckForUpdates
+                    text = "Compose Text",
+                    icon = FluentIcons.Edit,
+                    onClick = {
+                        try {
+                            val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:"))
+                            context.startActivity(intent)
+                        } catch (e: Exception) {}
+                        onDismiss()
+                    }
                 )
                 Spacer(modifier = Modifier.height(10.dp))
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.1f))
+            }
+            pkg.contains("calendar") -> {
                 ActionButton(
-                    text = if (tile.isWidget) "Remove Widget" else "Unpin from Start",
-                    icon = if (tile.isWidget) FluentIcons.Delete else FluentIcons.Pin,
-                    onClick = onRemove,
-                    contentColor = MaterialTheme.colorScheme.error
+                    text = "New Event",
+                    icon = FluentIcons.Calendar,
+                    onClick = {
+                        try {
+                            val intent = Intent(Intent.ACTION_INSERT)
+                                .setData(Uri.parse("content://com.android.calendar/events"))
+                            context.startActivity(intent)
+                        } catch (e: Exception) {}
+                        onDismiss()
+                    }
                 )
                 Spacer(modifier = Modifier.height(10.dp))
-                ActionButton(
-                    text = "App Settings",
-                    icon = FluentIcons.Settings,
-                    onClick = onAppSettings
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-                ActionButton(
-                    text = "Dismiss Menu",
-                    icon = FluentIcons.Close,
-                    onClick = onDismiss
-                )
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.1f))
             }
         }
+
+        // Resize Quick Actions
+        Text(
+            text = "RESIZE MODE",
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 1.5.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+            modifier = Modifier.padding(bottom = 12.dp)
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 24.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            ResizeButton(TileSize.SMALL, currentSize = tile.size, modifier = Modifier.weight(1f), onClick = { onResize(TileSize.SMALL) })
+            ResizeButton(TileSize.MEDIUM, currentSize = tile.size, modifier = Modifier.weight(1f), onClick = { onResize(TileSize.MEDIUM) })
+            ResizeButton(TileSize.WIDE, currentSize = tile.size, modifier = Modifier.weight(1f), onClick = { onResize(TileSize.WIDE) })
+            ResizeButton(TileSize.LARGE, currentSize = tile.size, modifier = Modifier.weight(1f), onClick = { onResize(TileSize.LARGE) })
+        }
+
+        HorizontalDivider(modifier = Modifier.padding(bottom = 16.dp), color = Color.White.copy(alpha = 0.1f))
+
+        // Standard App Actions
+        if (!tile.isWidget && tile.specialType == null) {
+            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.1f))
+        }
+
+        // Shortcuts Section
+        if (shortcuts.isNotEmpty()) {
+            val shortcutSectionTitle = remember(tile.packageName) {
+                val pkgName = tile.packageName?.lowercase() ?: ""
+                when {
+                    pkgName.contains("dialer") || pkgName.contains("phone") -> "FREQUENT CONTACTS"
+                    pkgName.contains("messaging") || pkgName.contains("message") || pkgName.contains("sms") || pkgName.contains("whatsapp") || pkgName.contains("telegram") -> "RECENT CONVERSATIONS"
+                    pkgName.contains("calendar") -> "UPCOMING EVENTS"
+                    pkgName.contains("mail") || pkgName.contains("outlook") || pkgName.contains("gmail") -> "RECENT EMAILS"
+                    pkgName.contains("camera") -> "SHOOTING MODES"
+                    pkgName.contains("chrome") || pkgName.contains("browser") || pkgName.contains("edge") -> "RECENT TABS"
+                    else -> "SHORTCUTS"
+                }
+            }
+            
+            Text(
+                text = shortcutSectionTitle,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 1.5.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                modifier = Modifier.padding(bottom = 12.dp)
+            )
+            
+            shortcuts.forEach { shortcut ->
+                val label = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N_MR1) {
+                    shortcut.shortLabel ?: shortcut.longLabel ?: "Shortcut"
+                } else {
+                    "Shortcut"
+                }
+                
+                val shortcutIcon = remember(shortcut) {
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N_MR1) {
+                        try {
+                            val launcherApps = context.getSystemService(android.content.Context.LAUNCHER_APPS_SERVICE) as android.content.pm.LauncherApps
+                            launcherApps.getShortcutIconDrawable(shortcut, context.resources.displayMetrics.densityDpi)
+                        } catch (_: Exception) {
+                            null
+                        }
+                    } else null
+                }
+
+                ActionButton(
+                    text = label.toString(),
+                    icon = shortcutIcon ?: Icons.AutoMirrored.Rounded.Launch,
+                    onClick = { 
+                        onShortcutClick(shortcut)
+                        onDismiss()
+                    }
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+            }
+            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.1f))
+        }
+
+        // Action Buttons
+        if (tile.isFolder) {
+            ActionButton(
+                text = "Rename folder",
+                icon = Icons.Rounded.Edit,
+                onClick = {
+                    onRename()
+                    onDismiss()
+                }
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+        }
+
+        ActionButton(
+            text = "Move Tile",
+            icon = FluentIcons.Open,
+            onClick = {
+                onMoveTile()
+                onDismiss()
+            }
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+        ActionButton(
+            text = "Check for Updates",
+            icon = FluentIcons.Search,
+            onClick = onCheckForUpdates
+        )
+    }
+}
+
+@Composable
+fun QuickActionButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    tint: Color = MaterialTheme.colorScheme.onSurface
+) {
+    Box(
+        modifier = modifier
+            .size(64.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color.White.copy(alpha = 0.08f))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        FluentIcon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            size = 24.dp,
+            tint = tint
+        )
     }
 }
 
@@ -354,81 +416,6 @@ fun ResizeButton(
                     RoundedCornerShape(2.dp)
                 )
         )
-    }
-}
-
-@Composable
-fun ShortcutActionButton(
-    text: String,
-    icon: android.graphics.drawable.Drawable?,
-    onClick: () -> Unit,
-    contentColor: Color = MaterialTheme.colorScheme.onSurface
-) {
-    Button(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = Color.White.copy(alpha = 0.08f),
-            contentColor = contentColor
-        ),
-        shape = RoundedCornerShape(14.dp),
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (icon != null) {
-                AsyncImage(model = icon, contentDescription = null, modifier = Modifier.size(22.dp))
-            } else {
-                Icon(Icons.AutoMirrored.Rounded.Launch, contentDescription = null, modifier = Modifier.size(22.dp))
-            }
-            Spacer(modifier = Modifier.width(16.dp))
-            Text(text, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Normal)
-        }
-    }
-}
-
-@Composable
-fun ActionButton(
-    text: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    onClick: () -> Unit,
-    contentColor: Color = MaterialTheme.colorScheme.onSurface
-) {
-    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-    
-    Button(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = Color.White.copy(alpha = 0.08f),
-            contentColor = contentColor
-        ),
-        shape = RoundedCornerShape(14.dp),
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            FluentIcon(
-                imageVector = icon, 
-                contentDescription = null, 
-                size = 22.dp,
-                gradient = if (contentColor == MaterialTheme.colorScheme.onSurface) {
-                    Brush.linearGradient(
-                        colors = listOf(
-                            MaterialTheme.colorScheme.primary,
-                            MaterialTheme.colorScheme.secondary
-                        )
-                    )
-                } else null,
-                tint = contentColor
-            )
-            Spacer(modifier = Modifier.width(16.dp))
-            Text(text, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Normal)
-        }
     }
 }
 

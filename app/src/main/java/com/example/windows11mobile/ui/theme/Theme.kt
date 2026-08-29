@@ -47,8 +47,9 @@ private val LightColorScheme = lightColorScheme(
 @Composable
 fun Windows11MobileTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
+    accentColor: Color = FluentBlue,
     // Dynamic color is available on Android 12+
-    dynamicColor: Boolean = true,
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {
@@ -57,8 +58,8 @@ fun Windows11MobileTheme(
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
 
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
+        darkTheme -> DarkColorScheme.copy(primary = accentColor)
+        else -> LightColorScheme.copy(primary = accentColor)
     }
 
     val view = LocalView.current

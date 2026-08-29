@@ -92,7 +92,9 @@ fun NewsFeedScreen(
                     .fillMaxWidth(),
                 alpha = 0.3f,
                 effect = com.example.windows11mobile.ui.components.FluentEffect.ACRYLIC,
-                blurRadius = 15,
+                blurRadius = 80,
+                tintColor = Color.Black.copy(alpha = 0.2f),
+                luminosityAlpha = 0.1f,
                 shape = RoundedCornerShape(8.dp)
             ) {
                 Text(
@@ -137,10 +139,10 @@ fun NewsCard(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
-        alpha = tileOpacity.coerceAtLeast(0.6f), // Ensure legibility in light mode
+        shape = RoundedCornerShape(24.dp),
+        alpha = 0.25f, // More subtle
         effect = com.example.windows11mobile.ui.components.FluentEffect.ACRYLIC,
-        blurRadius = 40
+        blurRadius = 60
     ) {
         Column {
             if (article.urlToImage != null) {
@@ -149,54 +151,60 @@ fun NewsCard(
                     contentDescription = null,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(200.dp) // Slightly taller image
-                        .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)),
+                        .height(220.dp)
+                        .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)),
                     contentScale = ContentScale.Crop
                 )
             }
             
             Column(
-                modifier = Modifier.padding(16.dp)
+                modifier = Modifier.padding(20.dp)
             ) {
-                Text(
-                    text = article.source.name.uppercase(),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Black,
-                    letterSpacing = 1.sp
-                )
-                
-                Spacer(modifier = Modifier.height(6.dp))
-                
-                Text(
-                    text = article.title,
-                    style = MaterialTheme.typography.titleLarge, // Larger title
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                
-                if (article.description != null) {
-                    Spacer(modifier = Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = article.description,
-                        style = MaterialTheme.typography.bodyMedium,
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontWeight = FontWeight.Medium
+                        text = article.source.name.uppercase(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = 1.5.sp
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "•",
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = article.publishedAt.substringBefore("T"),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                        fontWeight = FontWeight.Bold
                     )
                 }
                 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(10.dp))
                 
                 Text(
-                    text = article.publishedAt.substringBefore("T"),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                    fontWeight = FontWeight.Bold
+                    text = article.title,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.ExtraBold,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    lineHeight = 28.sp
                 )
+                
+                if (article.description != null) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = article.description,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                        fontWeight = FontWeight.Normal
+                    )
+                }
             }
         }
     }
@@ -224,7 +232,9 @@ fun CustomizeFeedDialog(
             shape = RoundedCornerShape(12.dp),
             alpha = 0.9f,
             effect = com.example.windows11mobile.ui.components.FluentEffect.ACRYLIC,
-            blurRadius = 60
+            blurRadius = 120,
+            tintColor = Color.Black.copy(alpha = 0.25f),
+            luminosityAlpha = 0.2f
         ) {
             Column(
                 modifier = Modifier
@@ -464,7 +474,9 @@ fun WeatherWidget() {
         shape = RoundedCornerShape(24.dp),
         alpha = 0.7f, 
         effect = com.example.windows11mobile.ui.components.FluentEffect.ACRYLIC,
-        blurRadius = 40,
+        blurRadius = 100,
+        tintColor = Color.Black.copy(alpha = 0.2f),
+        luminosityAlpha = 0.15f,
         contentColor = MaterialTheme.colorScheme.onSurface
     ) {
         Row(
@@ -536,7 +548,7 @@ fun NewsFeedScreenPreview() {
     val repository = remember { com.example.windows11mobile.data.RealNewsRepository(null) }
     val rssRepository = remember { com.example.windows11mobile.data.RssRepository() }
     val settingsRepository = remember { com.example.windows11mobile.data.RealSettingsRepository(context) }
-    val viewModel = remember { NewsFeedViewModel(repository, rssRepository, settingsRepository) }
+    val viewModel = remember { NewsFeedViewModel(repository, rssRepository, settingsRepository, context) }
     
     com.example.windows11mobile.ui.theme.Windows11MobileTheme {
         NewsFeedScreen(viewModel = viewModel)

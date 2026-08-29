@@ -23,7 +23,10 @@ data class HomeTile(
     val notificationSummary: String? = null,
     val notificationSender: String? = null,
     val notificationContent: String? = null,
-    val notificationTime: Long? = null
+    val notificationTime: Long? = null,
+    val subTiles: List<HomeTile> = emptyList(),
+    val isFolder: Boolean = false,
+    val isSpacer: Boolean = false
 ) {
     val spanX: Int get() = size.spanX
     val spanY: Int get() = size.spanY
@@ -32,5 +35,8 @@ data class HomeTile(
         const val TYPE_CLOCK = "system_clock"
         const val TYPE_WEATHER = "system_weather"
         const val TYPE_PHOTOS = "system_photos"
+        const val TYPE_CLOCK_WEATHER = "system_clock_weather"
+        const val TYPE_MUSIC = "system_music"
+        const val TYPE_SETTINGS = "system_settings"
     }
 }

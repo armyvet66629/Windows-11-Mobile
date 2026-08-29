@@ -2,62 +2,78 @@ package com.example.windows11mobile.data
 
 import android.content.Context
 import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.booleanPreferencesKey
-import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.core.stringSetPreferencesKey
-import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
-private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
+val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
 interface SettingsRepository {
     val isDarkMode: Flow<Boolean?>
     val wallpaperUri: Flow<String?>
     val pinnedApps: Flow<Set<String>>
     val homeTiles: Flow<String?>
+    val boardWidgets: Flow<String?>
     val preferredNewsCategories: Flow<Set<String>>
     val rssFeeds: Flow<Set<String>>
     val tileOpacity: Flow<Float>
+    val weatherAppPackage: Flow<String?>
+    val accentColor: Flow<Int>
+    val useFahrenheit: Flow<Boolean>
+    val showTaskbar: Flow<Boolean>
+    val pageOrder: Flow<List<String>>
+    val notesJson: Flow<String?>
 
     suspend fun setDarkMode(isDarkMode: Boolean)
     suspend fun setWallpaperUri(uri: String)
     suspend fun pinApp(packageName: String)
     suspend fun unpinApp(packageName: String)
     suspend fun setHomeTiles(tilesJson: String)
+    suspend fun setBoardWidgets(widgetsJson: String)
     suspend fun addNewsCategory(category: String)
     suspend fun removeNewsCategory(category: String)
     suspend fun setNewsCategories(categories: Set<String>)
     suspend fun addRssFeed(url: String)
     suspend fun removeRssFeed(url: String)
     suspend fun setTileOpacity(opacity: Float)
+    suspend fun setWeatherAppPackage(packageName: String?)
+    suspend fun setAccentColor(color: Int)
+    suspend fun setUseFahrenheit(useFahrenheit: Boolean)
+    suspend fun setShowTaskbar(show: Boolean)
+    suspend fun setPageOrder(order: List<String>)
+    suspend fun setNotesJson(json: String)
 
     companion object {
         val IS_DARK_MODE = booleanPreferencesKey("is_dark_mode")
         val WALLPAPER_URI = stringPreferencesKey("wallpaper_uri")
         val PINNED_APPS = stringSetPreferencesKey("pinned_apps")
         val HOME_TILES = stringPreferencesKey("home_tiles")
+        val BOARD_WIDGETS = stringPreferencesKey("board_widgets")
         val PREFERRED_NEWS_CATEGORIES = stringSetPreferencesKey("preferred_news_categories")
         val RSS_FEEDS = stringSetPreferencesKey("rss_feeds")
         val TILE_OPACITY = floatPreferencesKey("tile_opacity")
+        val WEATHER_APP_PACKAGE = stringPreferencesKey("weather_app_package")
+        val ACCENT_COLOR = intPreferencesKey("accent_color")
+        val USE_FAHRENHEIT = booleanPreferencesKey("use_fahrenheit")
+        val SHOW_TASKBAR = booleanPreferencesKey("show_taskbar")
+        val PAGE_ORDER = stringPreferencesKey("page_order")
+        val NOTES_JSON = stringPreferencesKey("notes_json")
         
         val DEFAULT_PINNED_APPS = setOf(
-            "com.android.chrome",
-            "com.google.android.apps.messaging",
             "com.android.settings",
-            "com.google.android.calendar"
+            "com.google.android.calendar",
+            "com.google.android.apps.messaging",
+            "com.google.android.dialer"
         )
-
-        val DEFAULT_NEWS_CATEGORIES = setOf("business", "technology", "sports", "entertainment")
+        val DEFAULT_NEWS_CATEGORIES = setOf("technology", "business", "science")
         val DEFAULT_RSS_FEEDS = setOf("https://www.theverge.com/rss/index.xml")
+        val DEFAULT_ACCENT_COLOR = 0xFF0078D4.toInt()
+        val DEFAULT_PAGE_ORDER = listOf("notes", "board", "desktop", "apps", "people")
     }
 }
 
 class RealSettingsRepository(private val context: Context) : SettingsRepository {
-
     private val dataStore = context.dataStore
 
     override val isDarkMode: Flow<Boolean?> = dataStore.data.map { preferences ->
@@ -76,6 +92,10 @@ class RealSettingsRepository(private val context: Context) : SettingsRepository 
         preferences[SettingsRepository.HOME_TILES]
     }
 
+    override val boardWidgets: Flow<String?> = dataStore.data.map { preferences ->
+        preferences[SettingsRepository.BOARD_WIDGETS]
+    }
+
     override val preferredNewsCategories: Flow<Set<String>> = dataStore.data.map { preferences ->
         preferences[SettingsRepository.PREFERRED_NEWS_CATEGORIES] ?: SettingsRepository.DEFAULT_NEWS_CATEGORIES
     }
@@ -86,6 +106,30 @@ class RealSettingsRepository(private val context: Context) : SettingsRepository 
 
     override val tileOpacity: Flow<Float> = dataStore.data.map { preferences ->
         preferences[SettingsRepository.TILE_OPACITY] ?: 0.25f
+    }
+
+    override val weatherAppPackage: Flow<String?> = dataStore.data.map { preferences ->
+        preferences[SettingsRepository.WEATHER_APP_PACKAGE]
+    }
+
+    override val accentColor: Flow<Int> = dataStore.data.map { preferences ->
+        preferences[SettingsRepository.ACCENT_COLOR] ?: SettingsRepository.DEFAULT_ACCENT_COLOR
+    }
+
+    override val useFahrenheit: Flow<Boolean> = dataStore.data.map { preferences ->
+        preferences[SettingsRepository.USE_FAHRENHEIT] ?: false
+    }
+
+    override val showTaskbar: Flow<Boolean> = dataStore.data.map { preferences ->
+        preferences[SettingsRepository.SHOW_TASKBAR] ?: false
+    }
+
+    override val pageOrder: Flow<List<String>> = dataStore.data.map { preferences ->
+        preferences[SettingsRepository.PAGE_ORDER]?.split(",") ?: SettingsRepository.DEFAULT_PAGE_ORDER
+    }
+
+    override val notesJson: Flow<String?> = dataStore.data.map { preferences ->
+        preferences[SettingsRepository.NOTES_JSON]
     }
 
     override suspend fun setDarkMode(isDarkMode: Boolean) {
@@ -117,6 +161,12 @@ class RealSettingsRepository(private val context: Context) : SettingsRepository 
     override suspend fun setHomeTiles(tilesJson: String) {
         dataStore.edit { preferences ->
             preferences[SettingsRepository.HOME_TILES] = tilesJson
+        }
+    }
+
+    override suspend fun setBoardWidgets(widgetsJson: String) {
+        dataStore.edit { preferences ->
+            preferences[SettingsRepository.BOARD_WIDGETS] = widgetsJson
         }
     }
 
@@ -157,6 +207,46 @@ class RealSettingsRepository(private val context: Context) : SettingsRepository 
     override suspend fun setTileOpacity(opacity: Float) {
         dataStore.edit { preferences ->
             preferences[SettingsRepository.TILE_OPACITY] = opacity
+        }
+    }
+
+    override suspend fun setWeatherAppPackage(packageName: String?) {
+        dataStore.edit { preferences ->
+            if (packageName == null) {
+                preferences.remove(SettingsRepository.WEATHER_APP_PACKAGE)
+            } else {
+                preferences[SettingsRepository.WEATHER_APP_PACKAGE] = packageName
+            }
+        }
+    }
+
+    override suspend fun setAccentColor(color: Int) {
+        dataStore.edit { preferences ->
+            preferences[SettingsRepository.ACCENT_COLOR] = color
+        }
+    }
+
+    override suspend fun setUseFahrenheit(useFahrenheit: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[SettingsRepository.USE_FAHRENHEIT] = useFahrenheit
+        }
+    }
+
+    override suspend fun setShowTaskbar(show: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[SettingsRepository.SHOW_TASKBAR] = show
+        }
+    }
+
+    override suspend fun setPageOrder(order: List<String>) {
+        dataStore.edit { preferences ->
+            preferences[SettingsRepository.PAGE_ORDER] = order.joinToString(",")
+        }
+    }
+
+    override suspend fun setNotesJson(json: String) {
+        dataStore.edit { preferences ->
+            preferences[SettingsRepository.NOTES_JSON] = json
         }
     }
 }

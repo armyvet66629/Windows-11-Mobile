@@ -3,7 +3,6 @@ package com.example.windows11mobile.ui.components
 import android.graphics.RenderEffect
 import android.graphics.Shader
 import android.os.Build
-import androidx.annotation.RequiresApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -20,6 +19,7 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.unit.dp
@@ -30,17 +30,25 @@ enum class FluentEffect {
     SMOKE
 }
 
+/**
+ * A highly customizable Fluent Surface that implements the Acrylic and Mica effects.
+ * For high-fidelity Acrylic (like in Windows 11), use a high [blurRadius] (60-100)
+ * and adjust [luminosityAlpha].
+ */
 @Composable
 fun FluentSurface(
     modifier: Modifier = Modifier,
-    shape: Shape = RoundedCornerShape(8.dp), // Fluent 2 uses tighter corners for some elements, but 8dp is standard
+    shape: Shape = RoundedCornerShape(8.dp),
     color: Color = MaterialTheme.colorScheme.surface,
     contentColor: Color = contentColorFor(color),
     alpha: Float = 0.7f,
     effect: FluentEffect = FluentEffect.ACRYLIC,
     blurRadius: Int = 30,
+    tintColor: Color = Color.Transparent,
+    luminosityAlpha: Float = 0.12f,
     noiseOpacity: Float = 0.03f,
     borderAlpha: Float = 0.2f,
+    lightRevealPosition: Offset? = null,
     content: @Composable BoxScope.() -> Unit
 ) {
     val noiseBitmap = remember {
@@ -64,17 +72,17 @@ fun FluentSurface(
             .shadow(
                 elevation = when (effect) {
                     FluentEffect.MICA -> 2.dp
-                    FluentEffect.ACRYLIC -> 16.dp
+                    FluentEffect.ACRYLIC -> 24.dp // Increased for better depth
                     FluentEffect.SMOKE -> 32.dp
                 },
                 shape = shape,
                 clip = false,
-                ambientColor = Color.Black.copy(alpha = 0.1f),
-                spotColor = Color.Black.copy(alpha = 0.15f)
+                ambientColor = Color.Black.copy(alpha = 0.15f),
+                spotColor = Color.Black.copy(alpha = 0.2f)
             )
             .clip(shape)
     ) {
-        // 1. Background layer: Blur + Tint
+        // 1. Background Blur Layer
         Box(
             modifier = Modifier
                 .matchParentSize()
@@ -94,22 +102,41 @@ fun FluentSurface(
                         Modifier.blur(blurRadius.dp)
                     }
                 )
+        )
+
+        // 2. Luminosity Layer (The "Glow" behind the tint)
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .background(
+                    if (isDark) Color.Black.copy(alpha = luminosityAlpha)
+                    else Color.White.copy(alpha = luminosityAlpha)
+                )
+        )
+
+        // 3. Tint Layer
+        Box(
+            modifier = Modifier
+                .matchParentSize()
                 .background(
                     when (effect) {
-                        FluentEffect.MICA -> {
-                            color.copy(alpha = 0.8f)
-                        }
-                        FluentEffect.ACRYLIC -> {
-                            color.copy(alpha = alpha)
-                        }
-                        FluentEffect.SMOKE -> {
-                            if (isDark) Color.Black.copy(alpha = 0.4f) else Color.Black.copy(alpha = 0.2f)
-                        }
+                        FluentEffect.MICA -> color.copy(alpha = 0.8f)
+                        FluentEffect.ACRYLIC -> color.copy(alpha = alpha)
+                        FluentEffect.SMOKE -> if (isDark) Color.Black.copy(alpha = 0.5f) else Color.Black.copy(alpha = 0.3f)
                     }
                 )
         )
 
-        // 2. Effect Layer: Noise and Luminosity
+        // 3.1 Extra Darkening Tint if provided
+        if (tintColor != Color.Transparent) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(tintColor)
+            )
+        }
+
+        // 4. Noise/Texture Layer
         Box(
             modifier = Modifier
                 .matchParentSize()
@@ -131,7 +158,7 @@ fun FluentSurface(
                 }
         )
 
-        // 3. Smoke Specific Overlay
+        // 5. Smoke Specific Gradient
         if (effect == FluentEffect.SMOKE) {
             Box(
                 modifier = Modifier
@@ -144,24 +171,36 @@ fun FluentSurface(
             )
         }
 
-        // 4. Fluent Border
+        // 6. Fluent Border (Inner Stroke)
         Box(
             modifier = Modifier
                 .matchParentSize()
                 .border(
-                    width = 0.5.dp,
-                    brush = Brush.linearGradient(
-                        listOf(
-                            Color.White.copy(alpha = borderAlpha),
-                            Color.White.copy(alpha = borderAlpha * 0.5f),
-                            Color.Transparent
+                    width = 0.8.dp, // Slightly thicker for definition
+                    brush = if (lightRevealPosition != null) {
+                        Brush.radialGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = 0.5f),
+                                Color.White.copy(alpha = 0.1f),
+                                Color.Transparent
+                            ),
+                            center = lightRevealPosition,
+                            radius = 240f
                         )
-                    ),
+                    } else {
+                        Brush.linearGradient(
+                            listOf(
+                                Color.White.copy(alpha = borderAlpha),
+                                Color.White.copy(alpha = borderAlpha * 0.4f),
+                                Color.Transparent
+                            )
+                        )
+                    },
                     shape = shape
                 )
         )
 
-        // 5. Content layer
+        // 7. Content layer
         Box(
             modifier = Modifier,
         ) {

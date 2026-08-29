@@ -73,6 +73,7 @@ dependencies {
     implementation(libs.converter.moshi)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.kotlinx.coroutines.play.services)
     implementation(libs.kotlinx.serialization.core)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.logging.interceptor)

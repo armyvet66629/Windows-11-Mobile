@@ -12,8 +12,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
@@ -34,6 +39,12 @@ import com.example.windows11mobile.ui.home.HomeViewModel
 import com.example.windows11mobile.ui.news.NewsFeedScreen
 import com.example.windows11mobile.ui.news.NewsFeedViewModel
 import com.example.windows11mobile.ui.news.NewsFeedViewModelFactory
+import com.example.windows11mobile.ui.widgets.WidgetsBoardScreen
+import com.example.windows11mobile.ui.people.PeopleHubScreen
+import com.example.windows11mobile.ui.people.PeopleViewModel
+import com.example.windows11mobile.ui.people.PeopleViewModelFactory
+import com.example.windows11mobile.ui.notes.NotesScreen
+import com.example.windows11mobile.ui.notes.NotesViewModel
 import com.example.windows11mobile.data.SettingsRepository
 import com.example.windows11mobile.ui.settings.SettingsScreen
 import com.example.windows11mobile.ui.settings.SettingsViewModel
@@ -41,6 +52,7 @@ import com.example.windows11mobile.ui.settings.SettingsViewModelFactory
 import com.example.windows11mobile.ui.theme.rememberWallpaperColor
 import com.example.windows11mobile.ui.components.FluentSurface
 import com.example.windows11mobile.ui.components.FluentEffect
+import com.example.windows11mobile.ui.components.WindowsDock
 
 @Composable
 fun MainShell(
@@ -81,8 +93,15 @@ fun MainShell(
         }
     }
     val wallpaperUri by settingsRepository.wallpaperUri.collectAsStateWithLifecycle(initialValue = null)
+    val showTaskbar by settingsRepository.showTaskbar.collectAsStateWithLifecycle(initialValue = false)
+    val pinnedApps by settingsRepository.pinnedApps.collectAsStateWithLifecycle(initialValue = emptySet())
+    val installedApps by homeViewModel.installedApps.collectAsStateWithLifecycle()
+    val pageOrder by settingsRepository.pageOrder.collectAsStateWithLifecycle(initialValue = SettingsRepository.DEFAULT_PAGE_ORDER)
     
-    val pagerState = rememberPagerState(initialPage = 1) { 3 }
+    val pagerState = rememberPagerState(
+        initialPage = pageOrder.indexOf("desktop").coerceAtLeast(0)
+    ) { pageOrder.size }
+    
     val currentRoute = backStack.lastOrNull()
 
     Scaffold(
@@ -99,14 +118,6 @@ fun MainShell(
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop
                 )
-                
-                // Wallpaper-aware Mica Overlay
-                val micaColor = rememberWallpaperColor(wallpaperUri, MaterialTheme.colorScheme.background)
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(micaColor.copy(alpha = 0.5f))
-                )
             } else {
                 // Default Mica background if no wallpaper is set
                 Box(
@@ -119,52 +130,97 @@ fun MainShell(
             // Content Area (Edge-to-Edge now that Dock is removed)
             Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
                 if (currentRoute in listOf(Dest.Desktop, Dest.AppDrawer, Dest.NewsFeed, null)) {
-                    HorizontalPager(
-                        state = pagerState,
-                        modifier = Modifier.fillMaxSize(),
-                        reverseLayout = true
-                    ) { page ->
-                        when (page) {
-                            0 -> {
-                                val viewModel: AppDrawerViewModel = viewModel(
-                                    factory = AppDrawerViewModelFactory(appRepository, settingsRepository, context)
-                                )
-                                AppDrawerScreen(
-                                    viewModel = viewModel,
-                                    onAppClick = { app ->
-                                        val intent = context.packageManager.getLaunchIntentForPackage(app.packageName)
-                                        if (intent != null) {
-                                            context.startActivity(intent)
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        HorizontalPager(
+                            state = pagerState,
+                            modifier = Modifier.fillMaxSize(),
+                            reverseLayout = false
+                        ) { pageIndex ->
+                            val pageId = pageOrder.getOrNull(pageIndex) ?: ""
+                            when (pageId) {
+                                "board" -> {
+                                    val viewModel: NewsFeedViewModel = viewModel(
+                                        factory = NewsFeedViewModelFactory(newsRepository, rssRepository, settingsRepository, context)
+                                    )
+                                    WidgetsBoardScreen(
+                                        newsViewModel = viewModel,
+                                        appWidgetHost = homeViewModel.appWidgetHost,
+                                        showTaskbar = showTaskbar
+                                    )
+                                }
+                                "desktop" -> {
+                                    HomeScreen(
+                                        viewModel = homeViewModel,
+                                        onAppClick = { packageName ->
+                                            val intent = context.packageManager.getLaunchIntentForPackage(packageName)
+                                            if (intent != null) {
+                                                context.startActivity(intent)
+                                            }
                                         }
-                                    },
-                                    onSettingsClick = {
-                                        backStack.add(Dest.Settings)
-                                    },
-                                    onPinToTaskbar = { _ ->
-                                        // Taskbar removed
-                                    },
-                                    onAddToHomeScreen = { app ->
-                                        homeViewModel.addTile(app.packageName, app.name)
-                                    }
-                                )
-                            }
-                            1 -> {
-                                HomeScreen(
-                                    viewModel = homeViewModel,
-                                    onAppClick = { packageName ->
-                                        val intent = context.packageManager.getLaunchIntentForPackage(packageName)
-                                        if (intent != null) {
-                                            context.startActivity(intent)
+                                    )
+                                }
+                                "apps" -> {
+                                    val viewModel: AppDrawerViewModel = viewModel(
+                                        factory = AppDrawerViewModelFactory(appRepository, settingsRepository, context)
+                                    )
+                                    AppDrawerScreen(
+                                        viewModel = viewModel,
+                                        onAppClick = { app ->
+                                            val intent = context.packageManager.getLaunchIntentForPackage(app.packageName)
+                                            if (intent != null) {
+                                                context.startActivity(intent)
+                                            }
+                                        },
+                                        onSettingsClick = {
+                                            backStack.add(Dest.Settings)
+                                        },
+                                        onPinToTaskbar = { _ ->
+                                            // Taskbar removed
+                                        },
+                                        onAddToHomeScreen = { app ->
+                                            homeViewModel.addTile(app.packageName, app.name)
                                         }
+                                    )
+                                }
+                                "people" -> {
+                                    val viewModel: PeopleViewModel = viewModel(
+                                        factory = PeopleViewModelFactory(application)
+                                    )
+                                    PeopleHubScreen(viewModel = viewModel)
+                                }
+                                "notes" -> {
+                                    val viewModel: NotesViewModel = viewModel(
+                                        factory = object : ViewModelProvider.Factory {
+                                            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                                                return NotesViewModel(settingsRepository) as T
+                                            }
+                                        }
+                                    )
+                                    NotesScreen(viewModel = viewModel)
+                                }
+                            }
+                        }
+
+                        // Taskbar Overlay
+                        if (showTaskbar) {
+                            WindowsDock(
+                                pinnedApps = pinnedApps,
+                                installedApps = installedApps,
+                                onAppClick = { packageName ->
+                                    val intent = context.packageManager.getLaunchIntentForPackage(packageName)
+                                    if (intent != null) {
+                                        context.startActivity(intent)
                                     }
-                                )
-                            }
-                            2 -> {
-                                val viewModel: NewsFeedViewModel = viewModel(
-                                    factory = NewsFeedViewModelFactory(newsRepository, rssRepository, settingsRepository)
-                                )
-                                NewsFeedScreen(viewModel = viewModel)
-                            }
+                                },
+                                onStartClick = {
+                                    // Could toggle start menu or jump to app drawer
+                                    // For now, let's jump to App Drawer (page 2)
+                                    // pagerState.animateScrollToPage(2)
+                                },
+                                modifier = Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .padding(bottom = 16.dp)
+                            )
                         }
                     }
                 } else {
@@ -210,6 +266,7 @@ fun MainShellPreview() {
     val context = LocalContext.current
     val backStack = remember { NavBackStack<NavKey>(Dest.Desktop) }
     val settingsRepository = remember { com.example.windows11mobile.data.RealSettingsRepository(context) }
+    val appWidgetHost = remember { android.appwidget.AppWidgetHost(context, 1024) }
     com.example.windows11mobile.ui.theme.Windows11MobileTheme {
         MainShell(
             backStack = backStack,

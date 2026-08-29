@@ -13,26 +13,26 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.Message
+import androidx.compose.material.icons.automirrored.rounded.Launch
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.example.windows11mobile.data.AppInfo
-import com.example.windows11mobile.data.AppRepository
-import com.example.windows11mobile.data.SettingsRepository
 import com.example.windows11mobile.ui.components.FluentSurface
-import com.microsoft.fluentui.tokenized.menu.Menu
-import com.microsoft.fluentui.tokenized.listitem.ListItem
+import com.example.windows11mobile.ui.components.FluentContextMenu
+import com.example.windows11mobile.ui.components.ActionButton
 
 import com.example.windows11mobile.ui.theme.FluentIcons
 import com.example.windows11mobile.ui.components.FluentIcon
@@ -46,11 +46,14 @@ fun AppDrawerScreen(
     onSettingsClick: () -> Unit,
     onPinToTaskbar: (AppInfo) -> Unit,
     onAddToHomeScreen: (AppInfo) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val apps by viewModel.filteredApps.collectAsStateWithLifecycle()
     val tileOpacity by viewModel.tileOpacity.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    
+    var selectedAppForMenu by remember { mutableStateOf<AppInfo?>(null) }
 
     Column(
         modifier = modifier
@@ -64,7 +67,13 @@ fun AppDrawerScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(bottom = 16.dp),
-            placeholder = { Text("Search apps") },
+            placeholder = { 
+                Text(
+                    "Search apps and web", 
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Bold
+                ) 
+            },
             leadingIcon = { 
                 FluentIcon(
                     FluentIcons.Search, 
@@ -85,42 +94,248 @@ fun AppDrawerScreen(
             singleLine = true
         )
 
-        // Apps List
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            contentPadding = PaddingValues(bottom = 80.dp) // Space for taskbar
-        ) {
-            // Launcher Settings entry at the top
-            item {
-                LauncherSettingsItem(
-                    tileOpacity = tileOpacity,
-                    onClick = onSettingsClick
-                )
-            }
-
-            val grouped = apps.groupBy { it.name.firstOrNull()?.uppercaseChar() ?: '?' }
-            
-            grouped.forEach { (letter, appList) ->
+        Box(modifier = Modifier.fillMaxSize()) {
+            // Apps List
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(bottom = 80.dp) // Space for taskbar
+            ) {
+                // Launcher Settings entry at the top
                 item {
-                    Text(
-                        text = letter.toString(),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(vertical = 8.dp, horizontal = 16.dp)
+                    LauncherSettingsItem(
+                        tileOpacity = tileOpacity,
+                        onClick = onSettingsClick
                     )
                 }
+
+                val grouped = apps.groupBy { it.name.firstOrNull()?.uppercaseChar() ?: '?' }
                 
-                items(appList) { app ->
-                    AppItem(
-                        app = app,
-                        tileOpacity = tileOpacity,
-                        getShortcuts = { viewModel.getShortcuts(app.packageName) },
-                        onShortcutClick = { viewModel.launchShortcut(it) },
-                        onClick = { onAppClick(app) },
-                        onPinToTaskbar = { onPinToTaskbar(app) },
-                        onAddToHomeScreen = { onAddToHomeScreen(app) }
+                grouped.forEach { (letter, appList) ->
+                    item {
+                        FluentSurface(
+                            modifier = Modifier
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            alpha = tileOpacity * 0.6f,
+                            effect = com.example.windows11mobile.ui.components.FluentEffect.ACRYLIC,
+                            blurRadius = 40,
+                            tintColor = Color.Black.copy(alpha = 0.1f)
+                        ) {
+                            Text(
+                                text = letter.toString(),
+                                style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Black,
+                                modifier = Modifier.padding(vertical = 8.dp, horizontal = 16.dp)
+                            )
+                        }
+                    }
+                    
+                    item {
+                        FluentSurface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp),
+                            shape = RoundedCornerShape(20.dp),
+                            alpha = tileOpacity * 0.4f,
+                            effect = com.example.windows11mobile.ui.components.FluentEffect.ACRYLIC,
+                            blurRadius = 60,
+                            tintColor = Color.Black.copy(alpha = 0.05f)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(vertical = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                appList.forEach { app ->
+                                    AppItem(
+                                        app = app,
+                                        tileOpacity = 0f, // Transparent since parent has the background
+                                        onClick = { onAppClick(app) },
+                                        onLongClick = { selectedAppForMenu = app }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Global Search Overlay
+            StartSearchOverlay(
+                searchQuery = searchQuery,
+                filteredApps = apps,
+                onAppClick = onAppClick,
+                onDismiss = { viewModel.onSearchQueryChange("") }
+            )
+
+            // Custom Fluent Context Menu
+            val currentApp = selectedAppForMenu
+            if (currentApp != null) {
+                val shortcuts = remember(currentApp) { viewModel.getShortcuts(currentApp.packageName) }
+                val pkg = currentApp.packageName.lowercase()
+                
+                FluentContextMenu(
+                    isVisible = true,
+                    title = currentApp.name,
+                    subtitle = currentApp.packageName,
+                    icon = currentApp.icon,
+                    onDismiss = { selectedAppForMenu = null }
+                ) {
+                    // App-Specific Primary Actions
+                    when {
+                        pkg.contains("dialer") || pkg.contains("phone") -> {
+                            ActionButton(
+                                text = "New Call",
+                                icon = FluentIcons.Call,
+                                onClick = {
+                                    try {
+                                        context.startActivity(Intent(Intent.ACTION_DIAL))
+                                    } catch (e: Exception) {}
+                                    selectedAppForMenu = null
+                                }
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.1f))
+                        }
+                        pkg.contains("messaging") || pkg.contains("message") || pkg.contains("sms") -> {
+                            ActionButton(
+                                text = "Compose Text",
+                                icon = FluentIcons.Edit,
+                                onClick = {
+                                    try {
+                                        context.startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:")))
+                                    } catch (e: Exception) {}
+                                    selectedAppForMenu = null
+                                }
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.1f))
+                        }
+                    }
+
+                    if (shortcuts.isNotEmpty()) {
+                        val shortcutSectionTitle = remember(currentApp.packageName) {
+                            val pkgName = currentApp.packageName.lowercase()
+                            when {
+                                pkgName.contains("dialer") || pkgName.contains("phone") -> "FREQUENT CONTACTS"
+                                pkgName.contains("messaging") || pkgName.contains("message") || pkgName.contains("sms") || pkgName.contains("whatsapp") || pkgName.contains("telegram") -> "RECENT CONVERSATIONS"
+                                pkgName.contains("calendar") -> "UPCOMING EVENTS"
+                                pkgName.contains("mail") || pkgName.contains("outlook") || pkgName.contains("gmail") -> "RECENT EMAILS"
+                                pkgName.contains("camera") -> "SHOOTING MODES"
+                                pkgName.contains("chrome") || pkgName.contains("browser") || pkgName.contains("edge") -> "RECENT TABS"
+                                else -> "SHORTCUTS"
+                            }
+                        }
+                        
+                        Text(
+                            text = shortcutSectionTitle,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            letterSpacing = 1.5.sp,
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                            modifier = Modifier.padding(bottom = 12.dp)
+                        )
+                        shortcuts.forEach { shortcut ->
+                            val label = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N_MR1) {
+                                shortcut.shortLabel ?: shortcut.longLabel ?: "Shortcut"
+                            } else "Shortcut"
+                            
+                            val shortcutIcon = remember(shortcut) {
+                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N_MR1) {
+                                    try {
+                                        val launcherApps = context.getSystemService(android.content.Context.LAUNCHER_APPS_SERVICE) as android.content.pm.LauncherApps
+                                        launcherApps.getShortcutIconDrawable(shortcut, context.resources.displayMetrics.densityDpi)
+                                    } catch (_: Exception) {
+                                        null
+                                    }
+                                } else null
+                            }
+
+                            ActionButton(
+                                text = label.toString(),
+                                icon = shortcutIcon ?: Icons.AutoMirrored.Rounded.Launch,
+                                onClick = {
+                                    viewModel.launchShortcut(shortcut)
+                                    selectedAppForMenu = null
+                                }
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                        }
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.1f))
+                    }
+
+                    ActionButton(
+                        text = "Pin to Taskbar",
+                        icon = FluentIcons.Pin,
+                        onClick = {
+                            onPinToTaskbar(currentApp)
+                            selectedAppForMenu = null
+                        }
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    ActionButton(
+                        text = "Add to Home Screen",
+                        icon = FluentIcons.Home,
+                        onClick = {
+                            onAddToHomeScreen(currentApp)
+                            selectedAppForMenu = null
+                        }
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.1f))
+                    
+                    ActionButton(
+                        text = "Share this App",
+                        icon = FluentIcons.Share,
+                        onClick = {
+                            val intent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, "Check out ${currentApp.name} at https://play.google.com/store/apps/details?id=${currentApp.packageName}")
+                            }
+                            context.startActivity(Intent.createChooser(intent, "Share ${currentApp.name}"))
+                            selectedAppForMenu = null
+                        }
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    ActionButton(
+                        text = "Rate & Review",
+                        icon = FluentIcons.Star,
+                        onClick = {
+                            try {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=${currentApp.packageName}")))
+                            } catch (e: Exception) {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=${currentApp.packageName}")))
+                            }
+                            selectedAppForMenu = null
+                        }
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.1f))
+
+                    ActionButton(
+                        text = "Uninstall App",
+                        icon = FluentIcons.Uninstall,
+                        onClick = {
+                            val intent = Intent(Intent.ACTION_DELETE).apply {
+                                data = Uri.fromParts("package", currentApp.packageName, null)
+                            }
+                            context.startActivity(intent)
+                            selectedAppForMenu = null
+                        },
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    ActionButton(
+                        text = "App Info",
+                        icon = FluentIcons.Info,
+                        onClick = {
+                            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                data = Uri.fromParts("package", currentApp.packageName, null)
+                            }
+                            context.startActivity(intent)
+                            selectedAppForMenu = null
+                        }
                     )
                 }
             }
@@ -140,7 +355,9 @@ fun LauncherSettingsItem(
         shape = RoundedCornerShape(16.dp),
         alpha = tileOpacity,
         effect = com.example.windows11mobile.ui.components.FluentEffect.ACRYLIC,
-        blurRadius = 40
+        blurRadius = 80,
+        tintColor = Color.Black.copy(alpha = 0.15f),
+        luminosityAlpha = 0.1f
     ) {
         Row(
             modifier = Modifier
@@ -191,28 +408,23 @@ fun LauncherSettingsItem(
 fun AppItem(
     app: AppInfo,
     tileOpacity: Float = 0.25f,
-    getShortcuts: () -> List<android.content.pm.ShortcutInfo> = { emptyList() },
-    onShortcutClick: (android.content.pm.ShortcutInfo) -> Unit = {},
     onClick: () -> Unit,
-    onPinToTaskbar: () -> Unit,
-    onAddToHomeScreen: () -> Unit
+    onLongClick: () -> Unit
 ) {
-    var showMenu by remember { mutableStateOf(false) }
-    val context = LocalContext.current
-    val shortcuts = remember(showMenu) { if (showMenu) getShortcuts() else emptyList() }
-
     Box {
         FluentSurface(
             modifier = Modifier
                 .fillMaxWidth()
                 .combinedClickable(
                     onClick = onClick,
-                    onLongClick = { showMenu = true }
+                    onLongClick = onLongClick
                 ),
             shape = RoundedCornerShape(16.dp),
             alpha = tileOpacity,
             effect = com.example.windows11mobile.ui.components.FluentEffect.ACRYLIC,
-            blurRadius = 30
+            blurRadius = 60,
+            tintColor = Color.Black.copy(alpha = 0.1f),
+            luminosityAlpha = 0.08f
         ) {
             Row(
                 modifier = Modifier
@@ -277,126 +489,18 @@ fun AppItem(
                 Column {
                     Text(
                         text = app.name,
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Medium
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onBackground
                     )
                     Text(
                         text = app.packageName,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                        fontWeight = FontWeight.SemiBold
                     )
                 }
             }
         }
-
-        Menu(
-            opened = showMenu,
-            onDismissRequest = { showMenu = false }
-        ) {
-            FluentSurface(
-                shape = MaterialTheme.shapes.medium,
-                alpha = 0.9f,
-                effect = com.example.windows11mobile.ui.components.FluentEffect.ACRYLIC,
-                blurRadius = 25
-            ) {
-                Column(
-                    modifier = Modifier.width(IntrinsicSize.Max)
-                ) {
-                    if (shortcuts.isNotEmpty()) {
-                        shortcuts.forEach { shortcut ->
-                            val label = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N_MR1) {
-                                shortcut.shortLabel ?: shortcut.longLabel ?: "Shortcut"
-                            } else "Shortcut"
-                            
-                            val shortcutIcon = remember(shortcut) {
-                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N_MR1) {
-                                    try {
-                                        val launcherApps = context.getSystemService(android.content.Context.LAUNCHER_APPS_SERVICE) as android.content.pm.LauncherApps
-                                        launcherApps.getShortcutIconDrawable(shortcut, context.resources.displayMetrics.densityDpi)
-                                    } catch (_: Exception) {
-                                        null
-                                    }
-                                } else null
-                            }
-
-                            ListItem.Item(
-                                text = label.toString(),
-                                leadingAccessoryContent = if (shortcutIcon != null) {
-                                    { AsyncImage(model = shortcutIcon, contentDescription = null, modifier = Modifier.size(20.dp)) }
-                                } else null,
-                                onClick = {
-                                    onShortcutClick(shortcut)
-                                    showMenu = false
-                                }
-                            )
-                        }
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
-                    }
-
-                    ListItem.Item(
-                        text = "Pin to Taskbar",
-                        leadingAccessoryContent = {
-                            FluentIcon(FluentIcons.Pin, contentDescription = null, size = 20.dp)
-                        },
-                        onClick = {
-                            onPinToTaskbar()
-                            showMenu = false
-                        }
-                    )
-                    ListItem.Item(
-                        text = "Add to Home Screen",
-                        leadingAccessoryContent = {
-                            FluentIcon(FluentIcons.Home, contentDescription = null, size = 20.dp)
-                        },
-                        onClick = {
-                            onAddToHomeScreen()
-                            showMenu = false
-                        }
-                    )
-                    ListItem.Item(
-                        text = "App Info",
-                        leadingAccessoryContent = {
-                            FluentIcon(FluentIcons.Info, contentDescription = null, size = 20.dp)
-                        },
-                        onClick = {
-                            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                data = Uri.fromParts("package", app.packageName, null)
-                            }
-                            context.startActivity(intent)
-                            showMenu = false
-                        }
-                    )
-                }
-            }
-        }
-    }
-}
-
-@androidx.compose.ui.tooling.preview.Preview(showBackground = true)
-@Composable
-fun AppDrawerScreenPreview() {
-    val repository = remember {
-        object : AppRepository {
-            override suspend fun getInstalledApps(): List<AppInfo> = listOf(
-                AppInfo("Calculator", "com.calc", null),
-                AppInfo("Calendar", "com.cal", null),
-                AppInfo("Camera", "com.cam", null),
-                AppInfo("Settings", "com.settings", null)
-            )
-            override fun getShortcuts(packageName: String): List<android.content.pm.ShortcutInfo> = emptyList()
-        }
-    }
-    val context = LocalContext.current
-    val settingsRepository = remember { com.example.windows11mobile.data.RealSettingsRepository(context) }
-    val viewModel = remember { AppDrawerViewModel(repository, settingsRepository, context) }
-    
-    com.example.windows11mobile.ui.theme.Windows11MobileTheme {
-        AppDrawerScreen(
-            viewModel = viewModel,
-            onAppClick = {},
-            onSettingsClick = {},
-            onPinToTaskbar = {},
-            onAddToHomeScreen = {}
-        )
     }
 }
