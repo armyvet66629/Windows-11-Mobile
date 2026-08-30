@@ -89,8 +89,9 @@ class WeatherRepository(private val context: Context) {
             val maxTemps = daily.getJSONArray("temperature_2m_max")
             val dailyCodes = daily.getJSONArray("weathercode")
             for (i in 0 until 5) {
+                val dateStr = days.getString(i)
                 dailyList.add(DailyForecast(
-                    day = days.getString(i),
+                    day = formatToShortDay(dateStr),
                     temp = maxTemps.getDouble(i).toFloat(),
                     icon = getWeatherCondition(dailyCodes.getInt(i))
                 ))
@@ -122,6 +123,26 @@ class WeatherRepository(private val context: Context) {
             80, 81, 82 -> "Rain Showers"
             95, 96, 99 -> "Thunderstorm"
             else -> "Unknown"
+        }
+    }
+
+    private fun formatToShortDay(dateStr: String): String {
+        return try {
+            val date = java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(dateStr) ?: return dateStr
+            val cal = java.util.Calendar.getInstance()
+            cal.time = date
+            when (cal.get(java.util.Calendar.DAY_OF_WEEK)) {
+                java.util.Calendar.MONDAY -> "Mon"
+                java.util.Calendar.TUESDAY -> "Tues"
+                java.util.Calendar.WEDNESDAY -> "Wed"
+                java.util.Calendar.THURSDAY -> "Thur"
+                java.util.Calendar.FRIDAY -> "Fri"
+                java.util.Calendar.SATURDAY -> "Sat"
+                java.util.Calendar.SUNDAY -> "Sun"
+                else -> ""
+            }
+        } catch (_: Exception) {
+            dateStr
         }
     }
 }
