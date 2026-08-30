@@ -17,8 +17,12 @@ import com.example.windows11mobile.data.NotificationManager
 import com.example.windows11mobile.data.SettingsRepository
 import com.example.windows11mobile.data.TileSize
 import com.example.windows11mobile.data.WeatherRepository
+import com.example.windows11mobile.data.NewsArticle
+import com.example.windows11mobile.data.RealNewsRepository
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
@@ -40,7 +44,7 @@ class HomeViewModel(
     private val weatherRepository = WeatherRepository(context)
     val weather = weatherRepository.weather
 
-    private val contactsRepository = com.example.windows11mobile.data.ContactsRepository(context)
+    private val contactsRepository = com.example.windows11mobile.data.ContactsRepository.getInstance(context)
     val contacts = contactsRepository.contacts
 
     private val calendarRepository = com.example.windows11mobile.data.CalendarRepository(context)
@@ -50,9 +54,27 @@ class HomeViewModel(
     val installedApps = flow {
         emit(appRepository.getInstalledApps())
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    
+    private val newsRepository = RealNewsRepository(null)
+    val topNews = flow {
+        while(true) {
+            emit(newsRepository.getTopHeadlines())
+            delay(3600000) // 1 hour
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _homeButtonPressed = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val homeButtonPressed = _homeButtonPressed.asSharedFlow()
+
     private val launcherApps = context.getSystemService(Context.LAUNCHER_APPS_SERVICE) as LauncherApps
     private val appWidgetManager = AppWidgetManager.getInstance(context)
     val appWidgetHost = AppWidgetHost(context, APPWIDGET_HOST_ID)
+
+    val availableWidgets = flow {
+        val providers = appWidgetManager.installedProviders
+        val grouped = providers.groupBy { it.provider.packageName }
+        emit(grouped)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     private val _rawTiles = MutableStateFlow<List<HomeTile>>(emptyList())
     val tiles = combine(_rawTiles, NotificationManager.notifications) { tiles, notifications ->
@@ -80,6 +102,9 @@ class HomeViewModel(
 
     private val _openFolderId = MutableStateFlow<String?>(null)
     val openFolderId = _openFolderId.asStateFlow()
+
+    private val _isDragging = MutableStateFlow(false)
+    val isDragging = _isDragging.asStateFlow()
 
     val tileOpacity = settingsRepository.tileOpacity.stateIn(
         viewModelScope,
@@ -188,7 +213,9 @@ class HomeViewModel(
         saveJob?.cancel()
         saveJob = viewModelScope.launch {
             delay(1000) // Debounce saves
-            settingsRepository.setHomeTiles(Json.encodeToString(_rawTiles.value))
+            // CRITICAL: Filter out spacers before saving to persistent storage
+            val tilesToSave = _rawTiles.value.filter { !it.isSpacer }
+            settingsRepository.setHomeTiles(Json.encodeToString(tilesToSave))
         }
     }
 
@@ -208,19 +235,24 @@ class HomeViewModel(
             val fromItem = list[fromIndex]
             val toItem = list[toIndex]
 
-            // Prevent self-folder or widget folding
             if (fromIndex == toIndex) {
-                saveTiles() // Just ensure state is persisted
+                saveTiles()
                 return
             }
 
+            val isEligibleMember = { tile: HomeTile -> !tile.isWidget && !tile.isSpacer }
+
             // Case 1: Drop onto an existing folder
-            if (toItem.isFolder && !fromItem.isFolder && !fromItem.isWidget) {
-                val updatedFolder = toItem.copy(
-                    subTiles = toItem.subTiles + fromItem.copy(size = TileSize.SMALL)
-                )
+            if (toItem.isFolder && isEligibleMember(fromItem)) {
+                val updatedFolder = if (fromItem.isFolder) {
+                    // Merge two folders
+                    toItem.copy(subTiles = toItem.subTiles + fromItem.subTiles)
+                } else {
+                    // Add app/system tile to folder
+                    toItem.copy(subTiles = toItem.subTiles + fromItem.copy(size = TileSize.SMALL))
+                }
+                
                 list.removeAt(fromIndex)
-                // Adjust toIndex if fromIndex was before it
                 val adjustedToIndex = list.indexOfFirst { it.id == toItem.id }
                 if (adjustedToIndex != -1) {
                     list[adjustedToIndex] = updatedFolder
@@ -230,8 +262,25 @@ class HomeViewModel(
                 return
             }
 
-            // Case 2: Drop onto another item to create a folder
-            if (!toItem.isWidget && !toItem.isSpacer && toItem.specialType == null && !fromItem.isFolder && !fromItem.isWidget && fromItem.specialType == null) {
+            // Case 2: Drop a folder onto an eligible app (Merge app into folder)
+            if (fromItem.isFolder && isEligibleMember(toItem)) {
+                val updatedFolder = fromItem.copy(
+                    subTiles = fromItem.subTiles + toItem.copy(size = TileSize.SMALL)
+                )
+                val firstIdx = fromIndex.coerceAtMost(toIndex)
+                val secondIdx = fromIndex.coerceAtLeast(toIndex)
+                list.removeAt(secondIdx)
+                list.removeAt(firstIdx)
+                // Insert at the toIndex position (which might have shifted)
+                val insertPos = if (toIndex > fromIndex) toIndex - 1 else toIndex
+                list.add(insertPos.coerceIn(0, list.size), updatedFolder)
+                _rawTiles.value = list
+                saveTiles()
+                return
+            }
+
+            // Case 3: Drop app onto app (Create new folder)
+            if (isEligibleMember(fromItem) && isEligibleMember(toItem)) {
                 val newFolder = HomeTile(
                     id = UUID.randomUUID().toString(),
                     label = "New Folder",
@@ -239,22 +288,18 @@ class HomeViewModel(
                     size = TileSize.MEDIUM,
                     subTiles = listOf(toItem.copy(size = TileSize.SMALL), fromItem.copy(size = TileSize.SMALL))
                 )
-                
                 val firstIdx = fromIndex.coerceAtMost(toIndex)
                 val secondIdx = fromIndex.coerceAtLeast(toIndex)
-                
                 list.removeAt(secondIdx)
                 list.removeAt(firstIdx)
-                
                 val insertPos = if (toIndex > fromIndex) toIndex - 1 else toIndex
                 list.add(insertPos.coerceIn(0, list.size), newFolder)
-                
                 _rawTiles.value = list
                 saveTiles()
                 return
             }
 
-            // Otherwise, just a final swap and save
+            // Otherwise, just reorder
             val item = list.removeAt(fromIndex)
             list.add(toIndex, item)
             _rawTiles.value = list
@@ -321,12 +366,16 @@ class HomeViewModel(
         _isEditMode.value = enabled
         if (enabled) {
             _explodedTileId.value = null
-            // Pad with spacers if in edit mode to allow moving to empty slots
-            // This is a simplified version; in a real app, we'd add enough to fill a few rows
+            // Pad with spacers to fill EVERY empty slot and extra rows
             val current = _rawTiles.value.toMutableList()
-            val spacersToAdd = 12 // Add 3 rows worth of potential spacers (assuming 4 columns)
-            repeat(spacersToAdd) {
-                current.add(HomeTile(id = "spacer_${UUID.randomUUID()}", label = "", isSpacer = true, size = TileSize.SMALL))
+            // Assume COMPACT 4 columns, MEDIUM 6, etc. 
+            // We'll add enough spacers to fill at least 40 slots (enough for 10 rows on compact)
+            val totalDesiredSlots = 40
+            val existingCount = current.size
+            if (existingCount < totalDesiredSlots) {
+                repeat(totalDesiredSlots - existingCount) {
+                    current.add(HomeTile(id = "spacer_${UUID.randomUUID()}", label = "", isSpacer = true, size = TileSize.SMALL))
+                }
             }
             _rawTiles.value = current
         } else {
@@ -345,6 +394,13 @@ class HomeViewModel(
         _openFolderId.value = id
     }
 
+    fun setIsDragging(dragging: Boolean) {
+        _isDragging.value = dragging
+        if (dragging) {
+            _explodedTileId.value = null
+        }
+    }
+
     fun renameFolder(id: String, newName: String) {
         _rawTiles.value = _rawTiles.value.map {
             if (it.id == id) it.copy(label = newName) else it
@@ -353,6 +409,25 @@ class HomeViewModel(
     }
 
     fun addTile(packageName: String, label: String) {
+        val openId = _openFolderId.value
+        if (openId != null) {
+            val list = _rawTiles.value.toMutableList()
+            val folderIndex = list.indexOfFirst { it.id == openId }
+            if (folderIndex != -1) {
+                val folder = list[folderIndex]
+                val newSubTile = HomeTile(
+                    id = UUID.randomUUID().toString(),
+                    packageName = packageName,
+                    label = label,
+                    size = TileSize.SMALL
+                )
+                list[folderIndex] = folder.copy(subTiles = folder.subTiles + newSubTile)
+                _rawTiles.value = list
+                saveTiles()
+                return
+            }
+        }
+        
         val newTile = HomeTile(
             id = UUID.randomUUID().toString(),
             packageName = packageName,
@@ -387,11 +462,15 @@ class HomeViewModel(
     }
 
     fun removeTile(id: String) {
-        val tile = _rawTiles.value.find { it.id == id }
+        android.util.Log.d("HomeViewModel", "Removing tile: $id")
+        val currentList = _rawTiles.value
+        val tile = currentList.find { it.id == id }
         if (tile?.isWidget == true && tile.widgetId != null) {
             appWidgetHost.deleteAppWidgetId(tile.widgetId)
         }
-        _rawTiles.value = _rawTiles.value.filter { it.id != id }
+        val newList = currentList.filter { it.id != id }
+        _rawTiles.value = newList
+        _explodedTileId.value = null
         saveTiles()
     }
 
@@ -445,6 +524,10 @@ class HomeViewModel(
 
     fun clearNotifications(packageName: String) {
         NotificationManager.clearNotifications(packageName)
+    }
+
+    fun onHomeButtonPressed() {
+        _homeButtonPressed.tryEmit(Unit)
     }
 
     fun mediaPlayPause() {

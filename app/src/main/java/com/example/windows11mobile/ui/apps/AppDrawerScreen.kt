@@ -3,6 +3,7 @@ package com.example.windows11mobile.ui.apps
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import androidx.compose.animation.*
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -11,6 +12,9 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.items as lazyGridItems
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Launch
@@ -37,6 +41,7 @@ import com.example.windows11mobile.ui.components.ActionButton
 import com.example.windows11mobile.ui.theme.FluentIcons
 import com.example.windows11mobile.ui.components.FluentIcon
 import androidx.compose.ui.graphics.Brush
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -52,51 +57,68 @@ fun AppDrawerScreen(
     val apps by viewModel.filteredApps.collectAsStateWithLifecycle()
     val tileOpacity by viewModel.tileOpacity.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val scope = rememberCoroutineScope()
     
     var selectedAppForMenu by remember { mutableStateOf<AppInfo?>(null) }
+    var showLetterSelector by remember { mutableStateOf(false) }
+
+    val grouped = remember(apps) { apps.groupBy { it.name.firstOrNull()?.uppercaseChar() ?: '?' } }
+    val letters = remember(grouped) { grouped.keys.toList().sorted() }
 
     Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(16.dp)
+        modifier = modifier.fillMaxSize()
     ) {
-        // Search Bar
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = viewModel::onSearchQueryChange,
+        // Search Bar (with top padding for status bar)
+        FluentSurface(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 16.dp),
-            placeholder = { 
-                Text(
-                    "Search apps and web", 
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Bold
-                ) 
-            },
-            leadingIcon = { 
-                FluentIcon(
-                    FluentIcons.Search, 
-                    contentDescription = null,
-                    gradient = Brush.linearGradient(
-                        colors = listOf(
-                            MaterialTheme.colorScheme.primary,
-                            MaterialTheme.colorScheme.secondary
-                        )
-                    )
-                ) 
-            },
+                .padding(top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 16.dp, start = 16.dp, end = 16.dp, bottom = 16.dp),
             shape = RoundedCornerShape(24.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.2f),
-                unfocusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.1f),
-            ),
-            singleLine = true
-        )
+            alpha = tileOpacity,
+            effect = com.example.windows11mobile.ui.components.FluentEffect.ACRYLIC,
+            blurRadius = 120,
+            tintColor = Color.Black.copy(alpha = 0.4f),
+            luminosityAlpha = 0.2f,
+            borderAlpha = 0.15f
+        ) {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = viewModel::onSearchQueryChange,
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { 
+                    Text(
+                        "Search apps and web", 
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Bold
+                    ) 
+                },
+                leadingIcon = { 
+                    FluentIcon(
+                        FluentIcons.Search, 
+                        contentDescription = null,
+                        gradient = Brush.linearGradient(
+                            colors = listOf(
+                                MaterialTheme.colorScheme.primary,
+                                MaterialTheme.colorScheme.secondary
+                            )
+                        )
+                    ) 
+                },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                    focusedBorderColor = Color.Transparent,
+                    unfocusedBorderColor = Color.Transparent
+                ),
+                singleLine = true
+            )
+        }
 
         Box(modifier = Modifier.fillMaxSize()) {
             // Apps List
             LazyColumn(
+                state = listState,
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(bottom = 80.dp) // Space for taskbar
@@ -109,18 +131,19 @@ fun AppDrawerScreen(
                     )
                 }
 
-                val grouped = apps.groupBy { it.name.firstOrNull()?.uppercaseChar() ?: '?' }
-                
-                grouped.forEach { (letter, appList) ->
+                letters.forEach { letter ->
+                    val appList = grouped[letter] ?: emptyList()
                     item {
                         FluentSurface(
                             modifier = Modifier
-                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                                .clickable { showLetterSelector = true },
                             shape = RoundedCornerShape(12.dp),
-                            alpha = tileOpacity * 0.6f,
+                            alpha = tileOpacity,
                             effect = com.example.windows11mobile.ui.components.FluentEffect.ACRYLIC,
-                            blurRadius = 40,
-                            tintColor = Color.Black.copy(alpha = 0.1f)
+                            blurRadius = 120,
+                            tintColor = Color.Black.copy(alpha = 0.4f),
+                            luminosityAlpha = 0.2f
                         ) {
                             Text(
                                 text = letter.toString(),
@@ -138,10 +161,11 @@ fun AppDrawerScreen(
                                 .fillMaxWidth()
                                 .padding(horizontal = 8.dp),
                             shape = RoundedCornerShape(20.dp),
-                            alpha = tileOpacity * 0.4f,
+                            alpha = tileOpacity,
                             effect = com.example.windows11mobile.ui.components.FluentEffect.ACRYLIC,
-                            blurRadius = 60,
-                            tintColor = Color.Black.copy(alpha = 0.05f)
+                            blurRadius = 120,
+                            tintColor = Color.Black.copy(alpha = 0.4f),
+                            luminosityAlpha = 0.2f
                         ) {
                             Column(
                                 modifier = Modifier.padding(vertical = 8.dp),
@@ -150,7 +174,6 @@ fun AppDrawerScreen(
                                 appList.forEach { app ->
                                     AppItem(
                                         app = app,
-                                        tileOpacity = 0f, // Transparent since parent has the background
                                         onClick = { onAppClick(app) },
                                         onLongClick = { selectedAppForMenu = app }
                                     )
@@ -168,6 +191,87 @@ fun AppDrawerScreen(
                 onAppClick = onAppClick,
                 onDismiss = { viewModel.onSearchQueryChange("") }
             )
+
+            // Letter Selection Overlay
+            androidx.compose.animation.AnimatedVisibility(
+                visible = showLetterSelector,
+                enter = fadeIn() + scaleIn(initialScale = 0.9f),
+                exit = fadeOut() + scaleOut(targetScale = 0.9f)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.4f))
+                        .clickable { showLetterSelector = false },
+                    contentAlignment = Alignment.Center
+                ) {
+                    FluentSurface(
+                        modifier = Modifier
+                            .fillMaxWidth(0.9f)
+                            .wrapContentHeight()
+                            .padding(16.dp)
+                            .clickable(enabled = false) { }, // Consume clicks
+                        shape = RoundedCornerShape(24.dp),
+                        alpha = 0.9f,
+                        effect = com.example.windows11mobile.ui.components.FluentEffect.ACRYLIC,
+                        blurRadius = 120,
+                        tintColor = Color.Black.copy(alpha = 0.3f),
+                        luminosityAlpha = 0.2f
+                    ) {
+                        Column(modifier = Modifier.padding(24.dp)) {
+                            Text(
+                                "JUMP TO LETTER",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                letterSpacing = 1.5.sp,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(bottom = 20.dp)
+                            )
+                            
+                            val allLetters = ('A'..'Z').toList() + '#'
+                            LazyVerticalGrid(
+                                columns = GridCells.Fixed(5),
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                modifier = Modifier.heightIn(max = 400.dp) // Use heightIn instead of wrapContentHeight
+                            ) {
+                                lazyGridItems(allLetters) { char ->
+                                    val isAvailable = letters.contains(char) || (char == '#' && letters.any { !it.isLetter() })
+                                    val targetLetter = if (char == '#' && letters.any { !it.isLetter() }) letters.first { !it.isLetter() } else char
+                                    
+                                    Box(
+                                        modifier = Modifier
+                                            .aspectRatio(1f)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(
+                                                if (isAvailable) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                                                else Color.White.copy(alpha = 0.05f)
+                                            )
+                                            .clickable(enabled = isAvailable) {
+                                                val charIndex = letters.indexOf(targetLetter)
+                                                if (charIndex != -1) {
+                                                    scope.launch {
+                                                        listState.animateScrollToItem(1 + 2 * charIndex)
+                                                    }
+                                                }
+                                                showLetterSelector = false
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = char.toString(),
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isAvailable) MaterialTheme.colorScheme.onSurface 
+                                                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
 
             // Custom Fluent Context Menu
             val currentApp = selectedAppForMenu
@@ -407,99 +511,91 @@ fun LauncherSettingsItem(
 @Composable
 fun AppItem(
     app: AppInfo,
-    tileOpacity: Float = 0.25f,
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
-    Box {
-        FluentSurface(
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            )
+            .padding(vertical = 4.dp)
+    ) {
+        Row(
             modifier = Modifier
-                .fillMaxWidth()
-                .combinedClickable(
-                    onClick = onClick,
-                    onLongClick = onLongClick
-                ),
-            shape = RoundedCornerShape(16.dp),
-            alpha = tileOpacity,
-            effect = com.example.windows11mobile.ui.components.FluentEffect.ACRYLIC,
-            blurRadius = 60,
-            tintColor = Color.Black.copy(alpha = 0.1f),
-            luminosityAlpha = 0.08f
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier
-                    .padding(12.dp)
-                    .fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                val icon = app.icon?.toBitmap()?.asImageBitmap()
-                if (icon != null) {
-                    Image(
-                        bitmap = icon,
-                        contentDescription = app.name,
-                        modifier = Modifier
-                            .size(48.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                    )
-                } else {
-                    val fallbackIcon = when(app.name.lowercase()) {
-                        "settings" -> FluentIcons.Settings
-                        "calendar" -> FluentIcons.Calendar
-                        "people", "contacts" -> Icons.Rounded.Person
-                        "messaging", "messages" -> FluentIcons.Message
-                        "phone", "dialer" -> Icons.Rounded.Phone
-                        "camera" -> Icons.Rounded.CameraAlt
-                        "mail", "gmail", "outlook" -> FluentIcons.Mail
-                        "maps", "navigation" -> Icons.Rounded.Map
-                        "photos", "gallery" -> FluentIcons.Photos
-                        else -> null
-                    }
+            val icon = app.icon?.toBitmap()?.asImageBitmap()
+            if (icon != null) {
+                Image(
+                    bitmap = icon,
+                    contentDescription = app.name,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                )
+            } else {
+                val fallbackIcon = when(app.name.lowercase()) {
+                    "settings" -> FluentIcons.Settings
+                    "calendar" -> FluentIcons.Calendar
+                    "people", "contacts" -> Icons.Rounded.Person
+                    "messaging", "messages" -> FluentIcons.Message
+                    "phone", "dialer" -> Icons.Rounded.Phone
+                    "camera" -> Icons.Rounded.CameraAlt
+                    "mail", "gmail", "outlook" -> FluentIcons.Mail
+                    "maps", "navigation" -> Icons.Rounded.Map
+                    "photos", "gallery" -> FluentIcons.Photos
+                    else -> null
+                }
 
-                    Box(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(MaterialTheme.colorScheme.primaryContainer),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (fallbackIcon != null) {
-                            FluentIcon(
-                                imageVector = fallbackIcon,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                size = 28.dp,
-                                gradient = Brush.linearGradient(
-                                    colors = listOf(
-                                        MaterialTheme.colorScheme.primary,
-                                        MaterialTheme.colorScheme.secondary
-                                    )
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (fallbackIcon != null) {
+                        FluentIcon(
+                            imageVector = fallbackIcon,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            size = 28.dp,
+                            gradient = Brush.linearGradient(
+                                colors = listOf(
+                                    MaterialTheme.colorScheme.primary,
+                                    MaterialTheme.colorScheme.secondary
                                 )
                             )
-                        } else {
-                            Text(
-                                text = app.name.firstOrNull()?.toString() ?: "?",
-                                style = MaterialTheme.typography.titleLarge
-                            )
-                        }
+                        )
+                    } else {
+                        Text(
+                            text = app.name.firstOrNull()?.toString() ?: "?",
+                            style = MaterialTheme.typography.titleLarge
+                        )
                     }
                 }
-                
-                Spacer(modifier = Modifier.width(16.dp))
-                
-                Column {
-                    Text(
-                        text = app.name,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                    Text(
-                        text = app.packageName,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
+            }
+            
+            Spacer(modifier = Modifier.width(16.dp))
+            
+            Column {
+                Text(
+                    text = app.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                Text(
+                    text = app.packageName,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                    fontWeight = FontWeight.SemiBold
+                )
             }
         }
     }

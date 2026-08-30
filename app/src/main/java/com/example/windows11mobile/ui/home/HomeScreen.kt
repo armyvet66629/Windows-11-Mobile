@@ -28,6 +28,8 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.animateOffsetAsState
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -36,6 +38,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.*
@@ -87,20 +90,24 @@ import com.example.windows11mobile.ui.home.YouTubeLiveTile
 import com.example.windows11mobile.ui.theme.FluentIcons
 import com.example.windows11mobile.ui.components.FluentIcon
 
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.coroutineScope
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel,
     onAppClick: (String) -> Unit,
+    onAddAppsClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val tiles by viewModel.tiles.collectAsStateWithLifecycle()
-    val currentTiles by rememberUpdatedState(tiles)
     val isEditMode by viewModel.isEditMode.collectAsStateWithLifecycle()
     val tileOpacity by viewModel.tileOpacity.collectAsStateWithLifecycle()
     val explodedTileId by viewModel.explodedTileId.collectAsStateWithLifecycle()
@@ -110,7 +117,10 @@ fun HomeScreen(
     val weatherAppPackage by viewModel.weatherAppPackage.collectAsStateWithLifecycle()
     val calendarEvents by viewModel.calendarEvents.collectAsStateWithLifecycle()
     val contacts by viewModel.contacts.collectAsStateWithLifecycle()
+    val availableWidgets by viewModel.availableWidgets.collectAsStateWithLifecycle()
+    val topNews by viewModel.topNews.collectAsStateWithLifecycle()
     val openFolderId by viewModel.openFolderId.collectAsStateWithLifecycle()
+    val isEditModeState = rememberUpdatedState(isEditMode)
 
     val adaptiveInfo = currentWindowAdaptiveInfo()
     val columns = when {
@@ -121,6 +131,7 @@ fun HomeScreen(
 
     val gridState = rememberLazyGridState()
     val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
     val density = androidx.compose.ui.platform.LocalDensity.current
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
     val screenHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }
@@ -134,9 +145,73 @@ fun HomeScreen(
     var selectedTileForMenu by remember { mutableStateOf<HomeTile?>(null) }
     var menuExpanded by remember { mutableStateOf(false) }
     var backgroundMenuExpanded by remember { mutableStateOf(false) }
+    var showWidgetPicker by remember { mutableStateOf(false) }
     var showNewFolderDialog by remember { mutableStateOf(false) }
     var folderToRename by remember { mutableStateOf<HomeTile?>(null) }
     var folderSourceCenter by remember { mutableStateOf(Offset.Zero) }
+    var gridPosition by remember { mutableStateOf(Offset.Zero) }
+
+    var pendingWidgetInfo by remember { mutableStateOf<android.appwidget.AppWidgetProviderInfo?>(null) }
+    var pendingWidgetId by remember { mutableIntStateOf(-1) }
+
+    // Sync dragging state to ViewModel to disable pager scrolling
+    LaunchedEffect(draggingTileId) {
+        viewModel.setIsDragging(draggingTileId != null)
+    }
+
+    // Central Drag Engine: Handles reordering and folder-hovering for ALL drags
+    LaunchedEffect(draggingTileId, pointerPosition) {
+        val draggingId = draggingTileId ?: return@LaunchedEffect
+        val layoutInfo = gridState.layoutInfo
+        val relativePointer = pointerPosition - gridPosition
+        
+        // Find the "current center" of the ghost tile
+        val currentCenter = relativePointer + Offset(
+            draggingTileSize.width / 2f - dragStartPointerOffset.x,
+            draggingTileSize.height / 2f - dragStartPointerOffset.y
+        )
+        
+        // Find items whose center is within radius. Use radius based detection for better feel.
+        val targetItem = layoutInfo.visibleItemsInfo.filter { it.key != draggingId }.find { other ->
+            val otherCenterX = other.offset.x + other.size.width / 2f
+            val otherCenterY = other.offset.y + other.size.height / 2f
+            val distSq = (currentCenter.x - otherCenterX) * (currentCenter.x - otherCenterX) +
+                         (currentCenter.y - otherCenterY) * (currentCenter.y - otherCenterY)
+            
+            // SWAP LOGIC: Tighter radius (35%) to prevent "fighting"
+            val swapRadius = other.size.width * 0.35f
+            distSq < swapRadius * swapRadius
+        }
+        
+        val candidateItem = if (targetItem == null) {
+            // If no swap, check for folder grouping with a larger radius (50%)
+            layoutInfo.visibleItemsInfo.filter { it.key != draggingId }.find { other ->
+                val otherCenterX = other.offset.x + other.size.width / 2f
+                val otherCenterY = other.offset.y + other.size.height / 2f
+                val distSq = (currentCenter.x - otherCenterX) * (currentCenter.x - otherCenterX) +
+                             (currentCenter.y - otherCenterY) * (currentCenter.y - otherCenterY)
+                val folderRadius = other.size.width * 0.5f
+                distSq < folderRadius * folderRadius
+            }
+        } else null
+
+        val targetTile = (targetItem ?: candidateItem)?.let { target -> tiles.find { it.id == target.key } }
+        val isFolderCandidate = targetTile != null && !targetTile.isWidget && !targetTile.isSpacer
+        
+        if (candidateItem != null && isFolderCandidate) {
+            hoveredTileId = targetTile.id
+        } else {
+            hoveredTileId = null
+            
+            if (targetItem != null) {
+                val fromIndex = tiles.indexOfFirst { it.id == draggingId }
+                val toIndex = targetItem.index
+                if (fromIndex != -1 && toIndex != -1 && fromIndex != toIndex) {
+                    viewModel.swapTiles(fromIndex, toIndex)
+                }
+            }
+        }
+    }
 
     // Auto-scroll logic to follow dragging tile
     LaunchedEffect(draggingTileId, pointerPosition) {
@@ -149,13 +224,28 @@ fun HomeScreen(
                 
                 if (distFromTop < threshold) {
                     val scrollAmount = (threshold - distFromTop) / 5f
+                    val oldIndex = gridState.firstVisibleItemIndex
                     gridState.dispatchRawDelta(-scrollAmount)
+                    if (gridState.firstVisibleItemIndex != oldIndex) {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    }
                 } else if (distFromBottom < threshold) {
                     val scrollAmount = (threshold - distFromBottom) / 5f
+                    val oldIndex = gridState.firstVisibleItemIndex
                     gridState.dispatchRawDelta(scrollAmount)
+                    if (gridState.firstVisibleItemIndex != oldIndex) {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    }
                 }
                 delay(16) // ~60fps scroll check
             }
+        }
+    }
+
+    // Haptic feedback for scrolling the home screen (only on new row)
+    LaunchedEffect(gridState.firstVisibleItemIndex) {
+        if (gridState.isScrollInProgress) {
+            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
         }
     }
 
@@ -163,17 +253,85 @@ fun HomeScreen(
         selectedTileForMenu?.packageName?.let { viewModel.getShortcuts(it) } ?: emptyList()
     }
 
-    val widgetPickerLauncher = rememberLauncherForActivityResult(
+    val widgetConfigLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
-            val appWidgetId = result.data?.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, -1) ?: -1
+            val appWidgetId = result.data?.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, -1) ?: pendingWidgetId
             if (appWidgetId != -1) {
                 val appWidgetInfo = AppWidgetManager.getInstance(context).getAppWidgetInfo(appWidgetId)
-                val label = appWidgetInfo?.loadLabel(context.packageManager) ?: "Widget"
-                viewModel.addWidgetTile(appWidgetId, label)
+                if (appWidgetInfo != null) {
+                    viewModel.addWidgetTile(appWidgetId, appWidgetInfo.loadLabel(context.packageManager))
+                }
             }
+        } else if (pendingWidgetId != -1) {
+            viewModel.appWidgetHost.deleteAppWidgetId(pendingWidgetId)
         }
+        pendingWidgetId = -1
+        pendingWidgetInfo = null
+    }
+
+    val bindWidgetLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val appWidgetId = result.data?.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, -1) ?: pendingWidgetId
+            val info = pendingWidgetInfo
+            if (appWidgetId != -1 && info != null) {
+                if (info.configure != null) {
+                    val intent = Intent(AppWidgetManager.ACTION_APPWIDGET_CONFIGURE).apply {
+                        component = info.configure
+                        putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+                    }
+                    widgetConfigLauncher.launch(intent)
+                } else {
+                    viewModel.addWidgetTile(appWidgetId, info.loadLabel(context.packageManager))
+                    pendingWidgetId = -1
+                    pendingWidgetInfo = null
+                }
+            }
+        } else if (pendingWidgetId != -1) {
+            viewModel.appWidgetHost.deleteAppWidgetId(pendingWidgetId)
+            pendingWidgetId = -1
+            pendingWidgetInfo = null
+        }
+    }
+
+    if (showWidgetPicker) {
+        com.example.windows11mobile.ui.widgets.WidgetPickerDialog(
+            availableWidgets = availableWidgets,
+            onDismiss = { showWidgetPicker = false },
+            onWidgetSelected = { info ->
+                showWidgetPicker = false
+                val appWidgetId = viewModel.allocateWidgetId()
+                val success = AppWidgetManager.getInstance(context).bindAppWidgetIdIfAllowed(
+                    appWidgetId,
+                    info.provider
+                )
+                
+                if (success) {
+                    if (info.configure != null) {
+                        pendingWidgetId = appWidgetId
+                        pendingWidgetInfo = info
+                        val intent = Intent(AppWidgetManager.ACTION_APPWIDGET_CONFIGURE).apply {
+                            component = info.configure
+                            putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+                        }
+                        widgetConfigLauncher.launch(intent)
+                    } else {
+                        viewModel.addWidgetTile(appWidgetId, info.loadLabel(context.packageManager))
+                    }
+                } else {
+                    pendingWidgetId = appWidgetId
+                    pendingWidgetInfo = info
+                    val intent = Intent(AppWidgetManager.ACTION_APPWIDGET_BIND).apply {
+                        putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+                        putExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER, info.provider)
+                    }
+                    bindWidgetLauncher.launch(intent)
+                }
+            }
+        )
     }
 
     Box(
@@ -185,36 +343,79 @@ fun HomeScreen(
                     while (true) {
                         val event = awaitPointerEvent(PointerEventPass.Initial)
                         pointerPosition = event.changes.first().position
+                        
+                        if (draggingTileId != null) {
+                            if (event.changes.all { !it.pressed }) {
+                                // CENTRAL DROP HANDLER
+                                val targetId = hoveredTileId
+                                val draggingId = draggingTileId
+                                if (draggingId != null) {
+                                    val fromIndex = tiles.indexOfFirst { it.id == draggingId }
+                                    if (targetId != null) {
+                                        val toIndex = tiles.indexOfFirst { it.id == targetId }
+                                        if (fromIndex != -1 && toIndex != -1) {
+                                            viewModel.moveTile(fromIndex, toIndex)
+                                        }
+                                    } else if (fromIndex != -1) {
+                                        viewModel.moveTile(fromIndex, fromIndex)
+                                    }
+                                }
+                                draggingTileId = null
+                                hoveredTileId = null
+                                viewModel.setIsDragging(false)
+                            }
+                        }
                     }
                 }
             }
-            .combinedClickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = { 
-                    if (isEditMode) viewModel.setEditMode(false) 
-                    backgroundMenuExpanded = false
-                },
-                onLongClick = { backgroundMenuExpanded = true }
-            )
+            .pointerInput(isEditMode) {
+                coroutineScope {
+                    awaitEachGesture {
+                        awaitFirstDown(pass = PointerEventPass.Main)
+                        var isConsumedElsewhere = false
+                        
+                        val holdJob = launch {
+                            // Increased delay to 1300ms for desktop menu to give apps priority
+                            delay(1300)
+                            if (!isConsumedElsewhere && draggingTileId == null && explodedTileId == null && openFolderId == null) {
+                                backgroundMenuExpanded = true
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            }
+                        }
+                        
+                        try {
+                            while (true) {
+                                val event = awaitPointerEvent(PointerEventPass.Main)
+                                if (event.changes.any { it.isConsumed }) {
+                                    isConsumedElsewhere = true
+                                    holdJob.cancel()
+                                }
+                                if (event.changes.all { !it.pressed }) {
+                                    if (!isConsumedElsewhere && !backgroundMenuExpanded) {
+                                        if (isEditMode) viewModel.setEditMode(false)
+                                    }
+                                    break
+                                }
+                            }
+                        } finally {
+                            holdJob.cancel()
+                        }
+                    }
+                }
+            }
     ) {
         LazyVerticalGrid(
             state = gridState,
             columns = GridCells.Fixed(columns),
             modifier = Modifier
                 .fillMaxSize()
-                .pointerInput(isEditMode) {
-                    detectTapGestures(
-                        onTap = {
-                            if (isEditMode) viewModel.setEditMode(false)
-                            backgroundMenuExpanded = false
-                        },
-                        onLongPress = {
-                            backgroundMenuExpanded = true
-                        }
-                    )
-                },
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 120.dp),
+                .onGloballyPositioned { gridPosition = it.positionInRoot() },
+            contentPadding = PaddingValues(
+                start = 16.dp, 
+                end = 16.dp, 
+                top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 16.dp, 
+                bottom = 120.dp
+            ),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -222,7 +423,7 @@ fun HomeScreen(
                 items = tiles,
                 key = { _, tile -> tile.id },
                 span = { _, tile -> GridItemSpan(tile.spanX.coerceAtMost(columns)) }
-            ) { index, tile ->
+            ) { _, tile ->
                 val isDragging = draggingTileId == tile.id
                 
                 val wobbleTransition = rememberInfiniteTransition(label = "wobble")
@@ -236,11 +437,6 @@ fun HomeScreen(
                     label = "wobbleRotate"
                 )
                 
-                val scale by animateFloatAsState(
-                    targetValue = if (isDragging) 1.15f else 1.0f,
-                    animationSpec = spring(stiffness = Spring.StiffnessLow, dampingRatio = Spring.DampingRatioLowBouncy),
-                    label = "dragScale"
-                )
                 val zIndexValue by animateFloatAsState(
                     targetValue = if (isDragging) 100f else 1f,
                     label = "dragZIndex"
@@ -261,198 +457,162 @@ fun HomeScreen(
                             alpha = if (isDragging) 0f else 1f
                             rotationZ = if (isEditMode && !isDragging) wobbleRotation else 0f
                         }
-                        .scale(scale)
-                        .pointerInput(tile.id, isEditMode) {
-                            if (isEditMode) {
-                                detectDragGestures(
-                                    onDragStart = { offset ->
-                                        draggingTileId = tile.id
-                                        draggingTileSize = itemSize
-                                        dragStartPointerOffset = offset
-                                    },
-                                    onDrag = { change, _ ->
-                                        change.consume()
-                                        
-                                        val layoutInfo = gridState.layoutInfo
-                                        val currentCenter = pointerPosition + Offset(
-                                            itemSize.width / 2f - dragStartPointerOffset.x,
-                                            itemSize.height / 2f - dragStartPointerOffset.y
-                                        )
-                                        
-                                        val targetItem = layoutInfo.visibleItemsInfo.filter { it.key != tile.id }.find { other ->
-                                            val otherCenterX = other.offset.x + other.size.width / 2f
-                                            val otherCenterY = other.offset.y + other.size.height / 2f
-                                            val hitBoxWidth = other.size.width * 0.48f
-                                            val hitBoxHeight = other.size.height * 0.48f
-                                            currentCenter.x > otherCenterX - hitBoxWidth &&
-                                            currentCenter.x < otherCenterX + hitBoxWidth &&
-                                            currentCenter.y > otherCenterY - hitBoxHeight &&
-                                            currentCenter.y < otherCenterY + hitBoxHeight
-                                        }
-                                        
-                                        var isFolderDropZone = false
-                                        targetItem?.let { target ->
-                                            val targetCenterX = target.offset.x + target.size.width / 2f
-                                            val targetCenterY = target.offset.y + target.size.height / 2f
-                                            val folderZoneWidth = target.size.width * 0.35f
-                                            val folderZoneHeight = target.size.height * 0.35f
-                                            
-                                            if (currentCenter.x > targetCenterX - folderZoneWidth &&
-                                                currentCenter.x < targetCenterX + folderZoneWidth &&
-                                                currentCenter.y > targetCenterY - folderZoneHeight &&
-                                                currentCenter.y < targetCenterY + folderZoneHeight) {
-                                                isFolderDropZone = true
-                                            }
-                                        }
-
-                                        val targetTile = targetItem?.let { target -> currentTiles.find { it.id == target.key } }
-                                        if (isFolderDropZone && (targetTile?.isFolder == true || (targetTile != null && targetTile.specialType == null && !targetTile.isWidget && !targetTile.isSpacer))) {
-                                            hoveredTileId = targetTile.id
-                                        } else {
-                                            hoveredTileId = null
-                                        }
-
-                                        if (targetItem != null && !isFolderDropZone) {
-                                            val fromIndex = currentTiles.indexOfFirst { it.id == tile.id }
-                                            val toIndex = targetItem.index
-                                            if (fromIndex != -1 && toIndex != -1 && fromIndex != toIndex) {
-                                                viewModel.swapTiles(fromIndex, toIndex)
-                                            }
-                                        }
-                                    },
-                                    onDragEnd = {
-                                        val targetId = hoveredTileId
-                                        if (targetId != null) {
-                                            val fromIndex = currentTiles.indexOfFirst { it.id == tile.id }
-                                            val toIndex = currentTiles.indexOfFirst { it.id == targetId }
-                                            if (fromIndex != -1 && toIndex != -1) {
-                                                viewModel.moveTile(fromIndex, toIndex)
-                                            }
-                                        }
-                                        draggingTileId = null
-                                        hoveredTileId = null
-                                    },
-                                    onDragCancel = { 
-                                        draggingTileId = null
-                                        hoveredTileId = null
+                        .pointerInput(tile.id) {
+                            coroutineScope {
+                                awaitEachGesture {
+                                    val down = awaitFirstDown(pass = PointerEventPass.Initial)
+                                    // If we are in edit mode, consume immediately to lock out parent pager
+                                    if (isEditModeState.value) {
+                                        down.consume()
                                     }
-                                )
-                            } else {
-                                detectDragGesturesAfterLongPress(
-                                    onDragStart = { offset ->
-                                        draggingTileId = tile.id
-                                        draggingTileSize = itemSize
-                                        dragStartPointerOffset = offset
-                                        viewModel.explodeTile(tile.id)
-                                    },
-                                    onDrag = { change, _ ->
-                                        change.consume()
-                                        
-                                        // Dismiss menu and start reordering if we were holding
-                                        viewModel.explodeTile(null)
-                                        if (!isEditMode) viewModel.setEditMode(true)
-                                        
-                                        val layoutInfo = gridState.layoutInfo
-                                        val currentCenter = pointerPosition + Offset(
-                                            itemSize.width / 2f - dragStartPointerOffset.x,
-                                            itemSize.height / 2f - dragStartPointerOffset.y
-                                        )
-                                        
-                                        val targetItem = layoutInfo.visibleItemsInfo.filter { it.key != tile.id }.find { other ->
-                                            val otherCenterX = other.offset.x + other.size.width / 2f
-                                            val otherCenterY = other.offset.y + other.size.height / 2f
-                                            val hitBoxWidth = other.size.width * 0.48f
-                                            val hitBoxHeight = other.size.height * 0.48f
-                                            currentCenter.x > otherCenterX - hitBoxWidth &&
-                                            currentCenter.x < otherCenterX + hitBoxWidth &&
-                                            currentCenter.y > otherCenterY - hitBoxHeight &&
-                                            currentCenter.y < otherCenterY + hitBoxHeight
-                                        }
-                                        
-                                        var isFolderDropZone = false
-                                        targetItem?.let { target ->
-                                            val targetCenterX = target.offset.x + target.size.width / 2f
-                                            val targetCenterY = target.offset.y + target.size.height / 2f
-                                            val folderZoneWidth = target.size.width * 0.35f
-                                            val folderZoneHeight = target.size.height * 0.35f
-                                            
-                                            if (currentCenter.x > targetCenterX - folderZoneWidth &&
-                                                currentCenter.x < targetCenterX + folderZoneWidth &&
-                                                currentCenter.y > targetCenterY - folderZoneHeight &&
-                                                currentCenter.y < targetCenterY + folderZoneHeight) {
-                                                isFolderDropZone = true
+                                    
+                                    var dragStarted = false
+                                    var hasMovedSignificant = false
+                                    val isHoldTriggered = BooleanArray(1) { false }
+                                    
+                                    val holdJob = launch {
+                                        if (!isEditModeState.value) {
+                                            // Consistent delay
+                                            delay(850)
+                                            if (draggingTileId == null) {
+                                                viewModel.explodeTile(tile.id)
+                                                isHoldTriggered[0] = true
+                                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                             }
-                                        }
-
-                                        val targetTile = targetItem?.let { target -> currentTiles.find { it.id == target.key } }
-                                        if (isFolderDropZone && (targetTile?.isFolder == true || (targetTile != null && targetTile.specialType == null && !targetTile.isWidget && !targetTile.isSpacer))) {
-                                            hoveredTileId = targetTile.id
                                         } else {
-                                            hoveredTileId = null
+                                            isHoldTriggered[0] = true
                                         }
-
-                                        if (targetItem != null && !isFolderDropZone) {
-                                            val fromIndex = currentTiles.indexOfFirst { it.id == tile.id }
-                                            val toIndex = targetItem.index
-                                            if (fromIndex != -1 && toIndex != -1 && fromIndex != toIndex) {
-                                                viewModel.swapTiles(fromIndex, toIndex)
-                                            }
-                                        }
-                                    },
-                                    onDragEnd = {
-                                        val targetId = hoveredTileId
-                                        if (targetId != null) {
-                                            val fromIndex = currentTiles.indexOfFirst { it.id == tile.id }
-                                            val toIndex = currentTiles.indexOfFirst { it.id == targetId }
-                                            if (fromIndex != -1 && toIndex != -1) {
-                                                viewModel.moveTile(fromIndex, toIndex)
-                                            }
-                                        }
-                                        draggingTileId = null
-                                        hoveredTileId = null
-                                    },
-                                    onDragCancel = { 
-                                        draggingTileId = null
-                                        hoveredTileId = null
                                     }
-                                )
-                            }
-                        }
-                        .combinedClickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = {
-                                if (draggingTileId == null && explodedTileId == null) {
-                                    if (tile.isFolder) {
-                                        folderSourceCenter = itemPosition + Offset(itemSize.width / 2f, itemSize.height / 2f)
-                                        viewModel.openFolder(tile.id)
-                                    } else if (tile.packageName != null) {
-                                        onAppClick(tile.packageName)
-                                    } else if (tile.specialType == HomeTile.TYPE_CLOCK || tile.specialType == HomeTile.TYPE_CLOCK_WEATHER) {
-                                        try { context.startActivity(Intent(android.provider.AlarmClock.ACTION_SHOW_ALARMS)) } catch (e: Exception) {}
+                                
+                                    try {
+                                        while (true) {
+                                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                                            val pointer = event.changes.firstOrNull { it.id == down.id } ?: break
+                                            
+                                            val totalDrag = pointer.position - down.position
+                                            // Lower threshold for starting drag once hold is active
+                                            val isMoving = totalDrag.getDistance() > viewConfiguration.touchSlop
+                                            if (isMoving) hasMovedSignificant = true
+                                            
+                                            if (pointer.pressed) {
+                                                if (isHoldTriggered[0] || isEditModeState.value) {
+                                                    pointer.consume()
+                                                    
+                                                    if (!dragStarted && (isEditModeState.value || isMoving)) {
+                                                        dragStarted = true
+                                                        holdJob.cancel()
+                                                        
+                                                        if (explodedTileId == tile.id) {
+                                                            viewModel.explodeTile(null)
+                                                        }
+                                                        
+                                                        if (!isEditModeState.value) {
+                                                            viewModel.setEditMode(true)
+                                                            viewModel.setIsDragging(true)
+                                                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                        }
+                                                        
+                                                        draggingTileId = tile.id
+                                                        draggingTileSize = itemSize
+                                                        dragStartPointerOffset = down.position
+                                                    }
+                                                } else if (hasMovedSignificant && !dragStarted) {
+                                                    holdJob.cancel()
+                                                }
+                                            } else {
+                                                // Up
+                                                holdJob.cancel()
+                                                if (!dragStarted && !isHoldTriggered[0] && !hasMovedSignificant) {
+                                                    // This was a click
+                                                    if (tile.isFolder) {
+                                                        folderSourceCenter = itemPosition + Offset(itemSize.width / 2f, itemSize.height / 2f)
+                                                        viewModel.openFolder(tile.id)
+                                                    } else if (tile.packageName != null) {
+                                                        onAppClick(tile.packageName)
+                                                    } else if (tile.specialType == HomeTile.TYPE_CLOCK || tile.specialType == HomeTile.TYPE_CLOCK_WEATHER) {
+                                                        try { context.startActivity(Intent(android.provider.AlarmClock.ACTION_SHOW_ALARMS)) } catch (e: Exception) {}
+                                                    }
+                                                }
+                                                break
+                                            }
+                                        }
+                                    } finally {
+                                        holdJob.cancel()
                                     }
                                 }
                             }
-                        )
+                        }
                 ) {
-                    HomeTileItem(
-                        tile = tile,
-                        isEditMode = isEditMode,
-                        isHovered = hoveredTileId == tile.id,
-                        tileOpacity = tileOpacity,
-                        weatherData = weatherData,
-                        recentNotifications = tile.packageName?.let { allNotifications[it]?.recentNotifications } ?: emptyList(),
-                        currentMedia = currentMedia,
-                        calendarEvents = calendarEvents,
-                        contacts = contacts,
-                        weatherAppPackage = weatherAppPackage,
-                        pointerPosition = pointerPosition,
-                        onResize = { viewModel.resizeTile(tile.id) },
-                        onPlayPause = { viewModel.mediaPlayPause() },
-                        onSkipNext = { viewModel.mediaSkipNext() },
-                        onSkipPrevious = { viewModel.mediaSkipPrevious() },
-                        widgetHost = viewModel.appWidgetHost
+                    val isHoverTarget = hoveredTileId == tile.id
+                    val pulseTransition = rememberInfiniteTransition(label = "pulse")
+                    val pulseScale by pulseTransition.animateFloat(
+                        initialValue = 1.05f,
+                        targetValue = 1.15f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(400, easing = LinearEasing),
+                            repeatMode = RepeatMode.Reverse
+                        ),
+                        label = "pulse"
                     )
+                    
+                    val hoverScale by animateFloatAsState(
+                        targetValue = if (isHoverTarget) pulseScale else 1f, 
+                        animationSpec = spring(stiffness = Spring.StiffnessLow),
+                        label = "hoverScale"
+                    )
+                    
+                    Box {
+                        HomeTileItem(
+                            tile = tile,
+                            isEditMode = isEditMode,
+                            isHovered = isHoverTarget,
+                            tileOpacity = tileOpacity,
+                            weatherData = weatherData,
+                            recentNotifications = tile.packageName?.let { allNotifications[it]?.recentNotifications } ?: emptyList(),
+                            currentMedia = currentMedia,
+                            calendarEvents = calendarEvents,
+                            contacts = contacts,
+                            weatherAppPackage = weatherAppPackage,
+                            pointerPosition = pointerPosition,
+                            onResize = { viewModel.resizeTile(tile.id) },
+                            onPlayPause = { viewModel.mediaPlayPause() },
+                            onSkipNext = { viewModel.mediaSkipNext() },
+                            onSkipPrevious = { viewModel.mediaSkipPrevious() },
+                            topNews = topNews,
+                            widgetHost = viewModel.appWidgetHost,
+                            modifier = Modifier.scale(hoverScale)
+                        )
+                        
+                        if (isEditMode && !tile.isSpacer) {
+                            Box(modifier = Modifier.matchParentSize().zIndex(20f), contentAlignment = Alignment.BottomEnd) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .clickable(
+                                            interactionSource = remember { MutableInteractionSource() },
+                                            indication = null
+                                        ) { viewModel.resizeTile(tile.id) },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.9f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = FluentIcons.Open,
+                                            contentDescription = "Resize",
+                                            modifier = Modifier.size(20.dp).graphicsLayer(rotationZ = 90f),
+                                            tint = MaterialTheme.colorScheme.onPrimary
+                                        )
+                                    }
+                                }
+                            }
+                            Box(modifier = Modifier.matchParentSize().border(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f), RoundedCornerShape(12.dp)).zIndex(15f))
+                        }
+                    }
                 }
             }
         }
@@ -509,6 +669,7 @@ fun HomeScreen(
                         onPlayPause = { viewModel.mediaPlayPause() },
                         onSkipNext = { viewModel.mediaSkipNext() },
                         onSkipPrevious = { viewModel.mediaSkipPrevious() },
+                        topNews = topNews,
                         widgetHost = viewModel.appWidgetHost
                     )
                 }
@@ -521,7 +682,7 @@ fun HomeScreen(
                 FluentSurface(modifier = Modifier.width(280.dp).padding(16.dp), shape = RoundedCornerShape(24.dp), alpha = 0.8f, effect = FluentEffect.ACRYLIC, blurRadius = 120, tintColor = Color.Black.copy(alpha = 0.25f), luminosityAlpha = 0.2f) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text("DESKTOP", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, letterSpacing = 1.5.sp, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(bottom = 12.dp, start = 8.dp))
-                        ActionButton(text = "Add Widget", icon = Icons.Rounded.Widgets, onClick = { backgroundMenuExpanded = false; val appWidgetId = viewModel.allocateWidgetId(); val intent = Intent(AppWidgetManager.ACTION_APPWIDGET_PICK).apply { putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId) }; widgetPickerLauncher.launch(intent) })
+                        ActionButton(text = "Add Widget", icon = Icons.Rounded.Widgets, onClick = { backgroundMenuExpanded = false; showWidgetPicker = true })
                         Spacer(modifier = Modifier.height(8.dp))
                         ActionButton(text = "Create folder", icon = Icons.Rounded.CreateNewFolder, onClick = { backgroundMenuExpanded = false; showNewFolderDialog = true })
                         Spacer(modifier = Modifier.height(8.dp))
@@ -597,84 +758,136 @@ fun HomeScreen(
         ) {
             if (openFolder != null) {
                 Box(modifier = Modifier.fillMaxSize().zIndex(300f).pointerInput(Unit) { detectTapGestures { viewModel.openFolder(null) } }, contentAlignment = Alignment.Center) {
-                    FluentSurface(
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth(0.9f)
                             .wrapContentHeight()
                             .padding(16.dp)
-                            .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(24.dp))
-                            .pointerInput(Unit) { detectTapGestures { } }, 
-                        shape = RoundedCornerShape(24.dp), 
-                        alpha = 0.85f, 
-                        effect = FluentEffect.ACRYLIC, 
-                        blurRadius = 120,
-                        tintColor = Color.Black.copy(alpha = 0.3f)
+                            .pointerInput(Unit) { detectTapGestures { } }
                     ) {
-                        Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.clickable { folderToRename = openFolder }
-                            ) {
-                                Text(text = openFolder.label, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onSurface)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Icon(Icons.Rounded.Edit, contentDescription = "Rename", modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
-                            }
-                            Spacer(modifier = Modifier.height(24.dp))
-                            androidx.compose.foundation.lazy.grid.LazyVerticalGrid(columns = androidx.compose.foundation.lazy.grid.GridCells.Fixed(3), verticalArrangement = Arrangement.spacedBy(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.heightIn(max = 400.dp)) {
-                                itemsIndexed(openFolder.subTiles) { i, subTile ->
-                                    var itemVisible by remember { mutableStateOf(false) }
-                                    var subDragOffset by remember { mutableStateOf(Offset.Zero) }
-                                    var isSubDragging by remember { mutableStateOf(false) }
-                                    
-                                    LaunchedEffect(Unit) { delay(10L * i); itemVisible = true }
-                                    
-                                    AnimatedVisibility(
-                                        visible = itemVisible, 
-                                        enter = fadeIn(tween(150)) + scaleIn(initialScale = 0.1f, animationSpec = tween(150), transformOrigin = androidx.compose.ui.graphics.TransformOrigin.Center) + expandIn(expandFrom = Alignment.Center, animationSpec = tween(150))
-                                    ) {
-                                        HomeTileItem(
-                                            tile = subTile, 
-                                            tileOpacity = tileOpacity, 
-                                            modifier = Modifier
-                                                .zIndex(if (isSubDragging) 100f else 1f)
-                                                .graphicsLayer {
-                                                    translationX = subDragOffset.x
-                                                    translationY = subDragOffset.y
-                                                    val scale = if (isSubDragging) 1.2f else 1f
-                                                    scaleX = scale
-                                                    scaleY = scale
-                                                }
-                                                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { 
-                                                    if (!isSubDragging) {
-                                                        if (subTile.packageName != null) {
-                                                            onAppClick(subTile.packageName)
-                                                            viewModel.openFolder(null)
-                                                        }
+                        FluentSurface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .wrapContentHeight()
+                                .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(24.dp)),
+                            shape = RoundedCornerShape(24.dp), 
+                            alpha = 0.85f, 
+                            effect = FluentEffect.ACRYLIC, 
+                            blurRadius = 120,
+                            tintColor = Color.Black.copy(alpha = 0.3f)
+                        ) {
+                            Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.clickable { folderToRename = openFolder }
+                                ) {
+                                    Text(text = openFolder.label, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onSurface)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Icon(Icons.Rounded.Edit, contentDescription = "Rename", modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                                }
+                                Spacer(modifier = Modifier.height(24.dp))
+                                LazyVerticalGrid(
+                                    columns = GridCells.Fixed(3), 
+                                    verticalArrangement = Arrangement.spacedBy(16.dp), 
+                                    horizontalArrangement = Arrangement.spacedBy(16.dp), 
+                                    modifier = Modifier.heightIn(max = 400.dp),
+                                    contentPadding = PaddingValues(bottom = 80.dp)
+                                ) {
+                                    itemsIndexed(openFolder.subTiles) { i, subTile ->
+                                        var itemVisible by remember { mutableStateOf(false) }
+                                        var subDragOffset by remember { mutableStateOf(Offset.Zero) }
+                                        var isSubDragging by remember { mutableStateOf(false) }
+                                        var subItemPosition by remember { mutableStateOf(Offset.Zero) }
+                                        var subItemSize by remember { mutableStateOf(IntSize.Zero) }
+                                        
+                                        LaunchedEffect(Unit) { delay(10L * i); itemVisible = true }
+                                        
+                                        AnimatedVisibility(
+                                            visible = itemVisible, 
+                                            enter = fadeIn(tween(150)) + scaleIn(initialScale = 0.1f, animationSpec = tween(150), transformOrigin = androidx.compose.ui.graphics.TransformOrigin.Center) + expandIn(expandFrom = Alignment.Center, animationSpec = tween(150))
+                                        ) {
+                                            HomeTileItem(
+                                                tile = subTile, 
+                                                tileOpacity = tileOpacity, 
+                                                modifier = Modifier
+                                                    .onGloballyPositioned { coords ->
+                                                        subItemPosition = coords.positionInRoot()
+                                                        subItemSize = coords.size
                                                     }
-                                                }
-                                                .pointerInput(subTile.id) {
-                                                    detectDragGesturesAfterLongPress(
-                                                        onDragStart = { isSubDragging = true },
-                                                        onDragEnd = {
-                                                            if (subDragOffset.getDistance() > 200f) {
-                                                                viewModel.removeTileFromFolder(openFolder.id, subTile.id, toIndex = 0)
+                                                    .zIndex(if (isSubDragging) 100f else 1f)
+                                                    .graphicsLayer {
+                                                        translationX = subDragOffset.x
+                                                        translationY = subDragOffset.y
+                                                        val scale = if (isSubDragging) 1.2f else 1f
+                                                        scaleX = scale
+                                                        scaleY = scale
+                                                    }
+                                                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { 
+                                                        if (!isSubDragging) {
+                                                            if (subTile.packageName != null) {
+                                                                onAppClick(subTile.packageName)
                                                                 viewModel.openFolder(null)
                                                             }
-                                                            isSubDragging = false
-                                                            subDragOffset = Offset.Zero
-                                                        },
-                                                        onDragCancel = {
-                                                            isSubDragging = false
-                                                            subDragOffset = Offset.Zero
-                                                        },
-                                                        onDrag = { change, dragAmount ->
-                                                            change.consume()
-                                                            subDragOffset += dragAmount
                                                         }
-                                                    )
-                                                }
-                                        )
+                                                    }
+                                                    .pointerInput(subTile.id) {
+                                                        detectDragGestures(
+                                                            onDragStart = { isSubDragging = true },
+                                                            onDragEnd = {
+                                                                isSubDragging = false
+                                                                subDragOffset = Offset.Zero
+                                                            },
+                                                            onDragCancel = {
+                                                                isSubDragging = false
+                                                                subDragOffset = Offset.Zero
+                                                            },
+                                                            onDrag = { change, dragAmount ->
+                                                                change.consume()
+                                                                subDragOffset += dragAmount
+                                                                
+                                                                val currentGlobalPosition = subItemPosition + subDragOffset
+                                                                
+                                                                if (subDragOffset.getDistance() > 350f) {
+                                                                    val handOffOffset = currentGlobalPosition
+                                                                    
+                                                                    draggingTileId = subTile.id
+                                                                    draggingTileSize = subItemSize
+                                                                    dragStartPointerOffset = pointerPosition - handOffOffset
+                                                                    
+                                                                    val relativePointer = pointerPosition - gridPosition
+                                                                    val layoutInfo = gridState.layoutInfo
+                                                                    val targetItem = layoutInfo.visibleItemsInfo.minByOrNull { other ->
+                                                                        val centerX = other.offset.x + other.size.width / 2f
+                                                                        val centerY = other.offset.y + other.size.height / 2f
+                                                                        (relativePointer.x - centerX) * (relativePointer.x - centerX) +
+                                                                        (relativePointer.y - centerY) * (relativePointer.y - centerY)
+                                                                    }
+                                                                    val dropIndex = targetItem?.index ?: tiles.size
+
+                                                                    viewModel.removeTileFromFolder(openFolder.id, subTile.id, toIndex = dropIndex)
+                                                                    viewModel.openFolder(null)
+                                                                    viewModel.setEditMode(true)
+                                                                    isSubDragging = false
+                                                                }
+                                                            }
+                                                        )
+                                                    }
+                                            )
+                                        }
                                     }
+                                }
+                            }
+
+                            // FAB in Folder (Lower Right)
+                            Box(modifier = Modifier.matchParentSize().padding(24.dp), contentAlignment = Alignment.BottomEnd) {
+                                FloatingActionButton(
+                                    onClick = onAddAppsClick,
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                                    shape = CircleShape,
+                                    modifier = Modifier.size(56.dp).shadow(8.dp, CircleShape)
+                                ) {
+                                    Icon(Icons.Rounded.Add, contentDescription = "Add Apps")
                                 }
                             }
                         }
@@ -703,6 +916,7 @@ fun HomeTileItem(
     onPlayPause: () -> Unit = {},
     onSkipNext: () -> Unit = {},
     onSkipPrevious: () -> Unit = {},
+    topNews: List<com.example.windows11mobile.data.NewsArticle> = emptyList(),
     widgetHost: android.appwidget.AppWidgetHost? = null
 ) {
     val ratio = tile.spanX.toFloat() / tile.spanY.toFloat()
@@ -741,52 +955,123 @@ fun HomeTileItem(
         } else if (tile.isWidget && tile.widgetId != null) {
             Box(modifier = Modifier.aspectRatio(ratio).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))) {
                 WidgetHostItem(widgetId = tile.widgetId, sharedHost = widgetHost)
-                if (isEditMode) {
-                    Box(modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp).size(24.dp).clip(RoundedCornerShape(6.dp)).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)).clickable { onResize() }, contentAlignment = Alignment.Center) { Icon(imageVector = FluentIcons.Open, contentDescription = "Resize", modifier = Modifier.size(16.dp).graphicsLayer(rotationZ = 90f), tint = MaterialTheme.colorScheme.onPrimary) }
-                    Box(modifier = Modifier.fillMaxSize().border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), RoundedCornerShape(12.dp)))
-                }
             }
         } else {
-            FluentSurface(
-                modifier = Modifier.aspectRatio(ratio)
-                    .scale(if (isHovered) 1.1f else 1.0f)
-                    .then(if (isHovered) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp)) else Modifier),
-                alpha = tileOpacity,
-                effect = FluentEffect.ACRYLIC,
-                blurRadius = if (tile.specialType != null || tile.notificationSender != null) 240 else 120,
-                tintColor = if (tile.specialType != null || tile.notificationSender != null) Color.Black.copy(alpha = 0.5f) else Color.Black.copy(alpha = 0.4f),
-                luminosityAlpha = if (tile.specialType != null || tile.notificationSender != null) 0.3f else 0.2f,
-                color = MaterialTheme.colorScheme.surface,
-                lightRevealPosition = localPointerPosition
-            ) {
-                Box(modifier = Modifier.fillMaxSize()) {
-                    when {
-                        tile.isFolder -> FolderTileContent(tile)
-                        tile.specialType == HomeTile.TYPE_CLOCK_WEATHER -> ClockWeatherTileContent(tile = tile, weatherData = weatherData, onWeatherClick = { if (weatherAppPackage == "web") context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=weather"))) else context.packageManager.getLaunchIntentForPackage(weatherAppPackage ?: "")?.let { context.startActivity(it) } })
-                        tile.specialType == HomeTile.TYPE_CLOCK -> ClockTileContent(tile)
-                        tile.specialType == HomeTile.TYPE_WEATHER -> WeatherTileContent(tile = tile, weatherData = weatherData, onWeatherClick = { if (weatherAppPackage == "web") context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=weather"))) else context.packageManager.getLaunchIntentForPackage(weatherAppPackage ?: "")?.let { context.startActivity(it) } })
-                        tile.specialType == HomeTile.TYPE_PHOTOS -> PhotoLiveTile(tile)
-                        tile.specialType == HomeTile.TYPE_MUSIC -> { val isPlaying = currentMedia?.isPlaying == true; FlippingTileContainer(isLive = currentMedia?.title != null, forceBack = isPlaying, front = { StandardTileContent(tile, icon) }, back = { MusicLiveTile(tile = tile, media = currentMedia, onPlayPause = onPlayPause, onSkipNext = onSkipNext, onSkipPrevious = onSkipPrevious) }) }
-                        tile.packageName?.lowercase()?.contains("calendar") == true || tile.specialType == "calendar" -> FlippingTileContainer(isLive = calendarEvents.isNotEmpty(), front = { StandardTileContent(tile, icon) }, back = { com.example.windows11mobile.ui.widgets.CalendarWidget(calendarEvents) })
-                        tile.packageName?.lowercase()?.contains("people") == true || tile.packageName?.lowercase()?.contains("contacts") == true -> FlippingTileContainer(isLive = contacts.isNotEmpty(), front = { StandardTileContent(tile, icon) }, back = { PeopleTileBack(contacts) })
-                        tile.specialType == HomeTile.TYPE_SETTINGS -> SettingsLiveTile(tile)
-                        tile.packageName?.lowercase()?.contains("youtube") == true && (tile.size == TileSize.WIDE || tile.size == TileSize.LARGE) -> {
-                            val isPlaying = currentMedia?.packageName?.contains("youtube") == true && currentMedia?.isPlaying == true
-                            FlippingTileContainer(
-                                isLive = isPlaying || recentNotifications.isNotEmpty(),
-                                forceBack = isPlaying,
-                                front = { StandardTileContent(tile, icon) },
-                                back = { YouTubeLiveTile(tile, currentMedia, recentNotifications) }
+            Box {
+                FluentSurface(
+                    modifier = Modifier.aspectRatio(ratio)
+                        .scale(if (isHovered) 1.1f else 1.0f)
+                        .then(if (isHovered) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp)) else Modifier),
+                    alpha = tileOpacity,
+                    effect = FluentEffect.ACRYLIC,
+                    blurRadius = if (tile.specialType != null || tile.notificationSender != null) 240 else 120,
+                    tintColor = if (tile.specialType != null || tile.notificationSender != null) Color.Black.copy(alpha = 0.5f) else Color.Black.copy(alpha = 0.4f),
+                    luminosityAlpha = if (tile.specialType != null || tile.notificationSender != null) 0.3f else 0.2f,
+                    color = MaterialTheme.colorScheme.surface,
+                    lightRevealPosition = localPointerPosition
+                ) {
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        when {
+                            tile.isFolder -> FolderTileContent(tile)
+                            tile.specialType == HomeTile.TYPE_CLOCK_WEATHER -> FlippingTileContainer(
+                                isLive = true,
+                                front = { ClockWeatherTileContent(tile = tile, weatherData = weatherData, onWeatherClick = { if (weatherAppPackage == "web") context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=weather"))) else context.packageManager.getLaunchIntentForPackage(weatherAppPackage ?: "")?.let { context.startActivity(it) } }) },
+                                back = { WeatherForecastBack(weatherData = weatherData) }
                             )
+                            tile.specialType == HomeTile.TYPE_CLOCK -> ClockTileContent(tile)
+                            tile.specialType == HomeTile.TYPE_WEATHER -> WeatherTileContent(tile = tile, weatherData = weatherData, onWeatherClick = { if (weatherAppPackage == "web") context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=weather"))) else context.packageManager.getLaunchIntentForPackage(weatherAppPackage ?: "")?.let { context.startActivity(it) } })
+                            tile.specialType == HomeTile.TYPE_PHOTOS -> PhotoLiveTile(tile)
+                            tile.specialType == HomeTile.TYPE_MUSIC -> { val isPlaying = currentMedia?.isPlaying == true; FlippingTileContainer(isLive = currentMedia?.title != null, forceBack = isPlaying, front = { StandardTileContent(tile, icon) }, back = { MusicLiveTile(tile = tile, media = currentMedia, onPlayPause = onPlayPause, onSkipNext = onSkipNext, onSkipPrevious = onSkipPrevious) }) }
+                            tile.packageName?.lowercase()?.contains("calendar") == true || tile.specialType == "calendar" -> FlippingTileContainer(isLive = calendarEvents.isNotEmpty(), front = { StandardTileContent(tile, icon) }, back = { com.example.windows11mobile.ui.widgets.CalendarWidget(calendarEvents) })
+                            tile.packageName?.lowercase()?.contains("people") == true || tile.packageName?.lowercase()?.contains("contacts") == true -> FlippingTileContainer(isLive = contacts.isNotEmpty(), front = { StandardTileContent(tile, icon) }, back = { PeopleTileBack(contacts) })
+                            tile.specialType == HomeTile.TYPE_SETTINGS -> SettingsLiveTile(tile)
+                            tile.packageName?.lowercase()?.contains("youtube") == true && (tile.size == TileSize.WIDE || tile.size == TileSize.LARGE) -> {
+                                val isPlaying = currentMedia?.packageName?.contains("youtube") == true && currentMedia?.isPlaying == true
+                                FlippingTileContainer(
+                                    isLive = isPlaying || recentNotifications.isNotEmpty(),
+                                    forceBack = isPlaying,
+                                    front = { StandardTileContent(tile, icon) },
+                                    back = { 
+                                        YouTubeLiveTile(
+                                            tile = tile, 
+                                            media = currentMedia, 
+                                            recentNotifications = recentNotifications,
+                                            onPlayPause = onPlayPause,
+                                            onSkipNext = onSkipNext,
+                                            onSkipPrevious = onSkipPrevious
+                                        ) 
+                                    }
+                                )
+                            }
+                            tile.packageName == "com.google.android.googlequicksearchbox" && (tile.size != TileSize.SMALL) -> {
+                                FlippingTileContainer(
+                                    isLive = topNews.isNotEmpty(),
+                                    front = { StandardTileContent(tile, icon) },
+                                    back = { NewsLiveTileBack(articles = topNews) }
+                                )
+                            }
+                            isCommunicationApp(tile.packageName) && (tile.size == TileSize.WIDE || tile.size == TileSize.LARGE) -> { val pkg = tile.packageName ?: ""; val isMusic = isMusicApp(pkg) && currentMedia?.packageName == pkg; val backContent: @Composable () -> Unit = { when { isMusic -> MusicLiveTile(tile = tile, media = currentMedia, onPlayPause = onPlayPause, onSkipNext = onSkipNext, onSkipPrevious = onSkipPrevious); pkg.contains("dialer", true) || pkg.contains("phone", true) -> PhoneLiveTile(tile, recentNotifications); pkg.contains("gmail", true) || pkg.contains("mail", true) || pkg.contains("outlook", true) -> GmailLiveTile(tile, recentNotifications); else -> MessagesLiveTile(tile, recentNotifications) } }; val isPlaying = isMusic && currentMedia?.isPlaying == true; FlippingTileContainer(isLive = isPlaying || recentNotifications.isNotEmpty(), forceBack = isPlaying, front = { StandardTileContent(tile, icon) }, back = { backContent() }) }
+                            else -> { 
+                                if (recentNotifications.isNotEmpty() && tile.size != TileSize.SMALL) {
+                                    FlippingTileContainer(
+                                        isLive = true,
+                                        front = { StandardTileContent(tile, icon) },
+                                        back = { GenericNotificationLiveTile(tile, recentNotifications) }
+                                    )
+                                } else if (tile.size == TileSize.LARGE) {
+                                    FlippingTileContainer(isLive = true, front = { StandardTileContent(tile, icon) }, back = { DateBackSide() }) 
+                                } else {
+                                    StandardTileContent(tile, icon)
+                                }
+                            }
                         }
-                        isCommunicationApp(tile.packageName) && (tile.size == TileSize.WIDE || tile.size == TileSize.LARGE) -> { val pkg = tile.packageName ?: ""; val isMusic = isMusicApp(pkg) && currentMedia?.packageName == pkg; val backContent: @Composable () -> Unit = { when { isMusic -> MusicLiveTile(tile = tile, media = currentMedia, onPlayPause = onPlayPause, onSkipNext = onSkipNext, onSkipPrevious = onSkipPrevious); pkg.contains("dialer", true) || pkg.contains("phone", true) -> PhoneLiveTile(tile, recentNotifications); pkg.contains("gmail", true) || pkg.contains("mail", true) || pkg.contains("outlook", true) -> GmailLiveTile(tile, recentNotifications); else -> MessagesLiveTile(tile, recentNotifications) } }; val isPlaying = isMusic && currentMedia?.isPlaying == true; FlippingTileContainer(isLive = isPlaying || recentNotifications.isNotEmpty(), forceBack = isPlaying, front = { StandardTileContent(tile, icon) }, back = { backContent() }) }
-                        else -> { if (tile.size == TileSize.LARGE) FlippingTileContainer(isLive = true, front = { StandardTileContent(tile, icon) }, back = { DateBackSide() }) else StandardTileContent(tile, icon) }
-                    }
-                    if (tile.notificationCount > 0 && !isEditMode) {
-                        Row(modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 8.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) { Text(text = if (tile.notificationCount > 99) "99+" else tile.notificationCount.toString(), style = MaterialTheme.typography.titleLarge.copy(fontSize = 24.sp, fontWeight = FontWeight.W300, color = MaterialTheme.colorScheme.onSurface)); Spacer(modifier = Modifier.width(6.dp)); val badgeIcon = when { tile.packageName?.contains("messaging") == true -> Icons.AutoMirrored.Rounded.Chat; tile.packageName?.contains("gmail") == true || tile.packageName?.contains("mail") == true -> Icons.Rounded.Email; tile.packageName?.contains("dialer") == true || tile.packageName?.contains("phone") == true -> Icons.Rounded.Phone; else -> Icons.Rounded.Notifications }; Icon(imageVector = badgeIcon, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurface) }
+                        if (tile.notificationCount > 0 && !isEditMode) {
+                            Row(modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 8.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) { Text(text = if (tile.notificationCount > 99) "99+" else tile.notificationCount.toString(), style = MaterialTheme.typography.titleLarge.copy(fontSize = 24.sp, fontWeight = FontWeight.W300, color = MaterialTheme.colorScheme.onSurface)); Spacer(modifier = Modifier.width(6.dp)); val badgeIcon = when { tile.packageName?.contains("messaging") == true -> Icons.AutoMirrored.Rounded.Chat; tile.packageName?.contains("gmail") == true || tile.packageName?.contains("mail") == true -> Icons.Rounded.Email; tile.packageName?.contains("dialer") == true || tile.packageName?.contains("phone") == true -> Icons.Rounded.Phone; else -> Icons.Rounded.Notifications }; Icon(imageVector = badgeIcon, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurface) }
+                        }
                     }
                 }
+                
+                if (isEditMode && !tile.isSpacer) {
+                    Box(modifier = Modifier.matchParentSize().zIndex(20f), contentAlignment = Alignment.BottomEnd) {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null
+                                ) { onResize() },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.9f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = FluentIcons.Open,
+                                    contentDescription = "Resize",
+                                    modifier = Modifier.size(18.dp).graphicsLayer(rotationZ = 90f),
+                                    tint = MaterialTheme.colorScheme.onPrimary
+                                )
+                            }
+                        }
+                    }
+                    Box(modifier = Modifier.matchParentSize().border(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f), RoundedCornerShape(12.dp)).zIndex(15f))
+                }
             }
+        }
+    }
+}
+
+@Composable
+fun ActionButton(text: String, icon: ImageVector, onClick: () -> Unit, modifier: Modifier = Modifier, contentColor: Color = MaterialTheme.colorScheme.onSurface) {
+    TextButton(onClick = onClick, modifier = modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.textButtonColors(contentColor = contentColor)) {
+        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp))
+            Spacer(modifier = Modifier.width(16.dp))
+            Text(text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         }
     }
 }
@@ -802,41 +1087,44 @@ fun isMusicApp(packageName: String?): Boolean {
 }
 
 @Composable
-fun ActionButton(text: String, icon: ImageVector, onClick: () -> Unit, modifier: Modifier = Modifier, contentColor: Color = MaterialTheme.colorScheme.onSurface) {
-    TextButton(onClick = onClick, modifier = modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.textButtonColors(contentColor = contentColor)) {
-        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp))
-            Spacer(modifier = Modifier.width(16.dp))
-            Text(text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        }
-    }
-}
-
-@Composable
-fun StandardTileContent(tile: HomeTile, icon: android.graphics.drawable.Drawable?) {
-    Column(modifier = Modifier.fillMaxSize().padding(12.dp), horizontalAlignment = if (tile.size == TileSize.WIDE || tile.size == TileSize.LARGE) Alignment.Start else Alignment.CenterHorizontally, verticalArrangement = if (tile.size == TileSize.WIDE || tile.size == TileSize.LARGE) Arrangement.Top else Arrangement.Center) {
-        Box(modifier = if (tile.size == TileSize.WIDE || tile.size == TileSize.LARGE) Modifier.size(32.dp) else Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-            if (icon != null) AsyncImage(model = icon, contentDescription = null, modifier = Modifier.size(when (tile.size) { TileSize.SMALL -> 28.dp; TileSize.MEDIUM -> 64.dp; TileSize.WIDE -> 40.dp; TileSize.LARGE -> 72.dp }))
-            else FluentIcon(imageVector = when (tile.label.lowercase()) { "settings" -> FluentIcons.Settings; "calendar" -> FluentIcons.Calendar; "people" -> Icons.Rounded.Person; "messaging" -> FluentIcons.Message; "phone" -> Icons.Rounded.Phone; "camera" -> Icons.Rounded.CameraAlt; "mail", "gmail" -> FluentIcons.Mail; "maps" -> Icons.Rounded.Map; "photos" -> FluentIcons.Photos; else -> FluentIcons.Apps }, contentDescription = null, size = when (tile.size) { TileSize.SMALL -> 28.dp; TileSize.MEDIUM -> 64.dp; TileSize.WIDE -> 40.dp; TileSize.LARGE -> 72.dp }, gradient = Brush.linearGradient(colors = listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary)))
-        }
-        if (tile.size != TileSize.SMALL) {
-            if (tile.size == TileSize.WIDE || tile.size == TileSize.LARGE) {
-                Spacer(modifier = Modifier.height(8.dp)); Text(text = if (tile.notificationCount > 0) "${tile.label} (${tile.notificationCount})" else tile.label, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onSurface)
-                if (tile.notificationSummary != null) { Spacer(modifier = Modifier.height(4.dp)); Text(text = tile.notificationSummary, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold, maxLines = if (tile.size == TileSize.LARGE) 6 else 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface) }
-                else { Spacer(modifier = Modifier.height(4.dp)); Text(text = "No new notifications", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)) }
-            } else { Text(text = if (tile.notificationCount > 0) "${tile.label} (${tile.notificationCount})" else tile.label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface) }
-        }
-    }
-}
-
-@Composable
 fun WidgetHostItem(widgetId: Int, sharedHost: android.appwidget.AppWidgetHost? = null) {
     val context = LocalContext.current
     val appWidgetManager = remember { AppWidgetManager.getInstance(context) }
     val appWidgetHost = sharedHost ?: remember { android.appwidget.AppWidgetHost(context, 1024) }
-    val appWidgetInfo = remember(widgetId) { try { appWidgetManager.getAppWidgetInfo(widgetId) } catch (e: Exception) { null } }
-    if (appWidgetInfo != null) { key(widgetId) { AndroidView(modifier = Modifier.fillMaxSize().padding(8.dp), factory = { ctx -> appWidgetHost.createView(ctx, widgetId, appWidgetInfo).apply { setAppWidget(widgetId, appWidgetInfo) } }, update = { view -> }) } }
-    else { Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)), contentAlignment = Alignment.Center) { Column(horizontalAlignment = Alignment.CenterHorizontally) { Icon(Icons.Rounded.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error); Text("Widget not found", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) } } }
+    val appWidgetInfo = remember(widgetId) { 
+        try { 
+            appWidgetManager.getAppWidgetInfo(widgetId) 
+        } catch (e: Exception) { 
+            android.util.Log.e("WidgetHostItem", "Error getting widget info for $widgetId", e)
+            null 
+        } 
+    }
+    
+    if (appWidgetInfo != null) { 
+        key(widgetId) { 
+            AndroidView(
+                modifier = Modifier.fillMaxSize().padding(8.dp), 
+                factory = { ctx -> 
+                    try {
+                        appWidgetHost.createView(ctx, widgetId, appWidgetInfo).apply { 
+                            setAppWidget(widgetId, appWidgetInfo) 
+                        } 
+                    } catch (e: Exception) {
+                        android.util.Log.e("WidgetHostItem", "Error creating widget view", e)
+                        android.appwidget.AppWidgetHostView(ctx) // Fallback empty view
+                    }
+                }, 
+                update = { view -> }
+            ) 
+        } 
+    } else { 
+        Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)), contentAlignment = Alignment.Center) { 
+            Column(horizontalAlignment = Alignment.CenterHorizontally) { 
+                Icon(Icons.Rounded.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                Text("Widget not found", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) 
+            } 
+        } 
+    }
 }
 
 @Composable

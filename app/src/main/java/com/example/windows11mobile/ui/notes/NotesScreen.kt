@@ -36,7 +36,10 @@ fun NotesScreen(
             .fillMaxSize()
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
-        contentPadding = PaddingValues(top = 60.dp, bottom = 120.dp)
+        contentPadding = PaddingValues(
+            top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 24.dp, 
+            bottom = 120.dp
+        )
     ) {
         item {
             FluentSurface(

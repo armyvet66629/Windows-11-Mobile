@@ -80,9 +80,13 @@ fun AdvancedFluentMenu(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             QuickActionButton(
-                icon = if (tile.isWidget) FluentIcons.Delete else FluentIcons.Pin,
-                contentDescription = "Pin/Unpin",
-                onClick = onRemove
+                icon = Icons.Rounded.Delete,
+                contentDescription = "Remove",
+                tint = MaterialTheme.colorScheme.error,
+                onClick = {
+                    onRemove()
+                    onDismiss()
+                }
             )
             QuickActionButton(
                 icon = FluentIcons.Share,
@@ -93,7 +97,6 @@ fun AdvancedFluentMenu(
                 QuickActionButton(
                     icon = FluentIcons.Uninstall,
                     contentDescription = "Uninstall",
-                    tint = MaterialTheme.colorScheme.error,
                     onClick = onUninstall
                 )
             }
@@ -231,6 +234,85 @@ fun AdvancedFluentMenu(
                         try {
                             val intent = Intent(Intent.ACTION_INSERT)
                                 .setData(Uri.parse("content://com.android.calendar/events"))
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            context.startActivity(intent)
+                        } catch (e: Exception) {}
+                        onDismiss()
+                    }
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.1f))
+            }
+            pkg.contains("camera") -> {
+                ActionButton(
+                    text = "Take Photo",
+                    icon = Icons.Rounded.CameraAlt,
+                    onClick = {
+                        try {
+                            val intent = Intent(android.provider.MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            context.startActivity(intent)
+                        } catch (e: Exception) {}
+                        onDismiss()
+                    }
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                ActionButton(
+                    text = "Record Video",
+                    icon = Icons.Rounded.Videocam,
+                    onClick = {
+                        try {
+                            val intent = Intent(android.provider.MediaStore.INTENT_ACTION_VIDEO_CAMERA)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            context.startActivity(intent)
+                        } catch (e: Exception) {}
+                        onDismiss()
+                    }
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.1f))
+            }
+            pkg.contains("mail") || pkg.contains("gmail") || pkg.contains("outlook") -> {
+                ActionButton(
+                    text = "Compose Email",
+                    icon = FluentIcons.Mail,
+                    onClick = {
+                        try {
+                            val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:"))
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            context.startActivity(intent)
+                        } catch (e: Exception) {}
+                        onDismiss()
+                    }
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.1f))
+            }
+            pkg.contains("maps") || pkg.contains("navigation") -> {
+                ActionButton(
+                    text = "Navigate Home",
+                    icon = Icons.Rounded.Home,
+                    onClick = {
+                        try {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("google.navigation:q=Home"))
+                                .setPackage("com.google.android.apps.maps")
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            context.startActivity(intent)
+                        } catch (e: Exception) {}
+                        onDismiss()
+                    }
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.1f))
+            }
+            pkg.contains("chrome") || pkg.contains("browser") || pkg.contains("edge") -> {
+                ActionButton(
+                    text = "New Tab",
+                    icon = Icons.Rounded.Add,
+                    onClick = {
+                        try {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com"))
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                             context.startActivity(intent)
                         } catch (e: Exception) {}
                         onDismiss()

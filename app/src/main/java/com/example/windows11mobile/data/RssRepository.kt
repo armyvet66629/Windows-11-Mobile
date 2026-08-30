@@ -17,7 +17,9 @@ class RssRepository(private val client: OkHttpClient = OkHttpClient()) {
         val allArticles = mutableListOf<NewsArticle>()
         urls.forEach { url ->
             try {
+                Log.d("RssRepository", "Fetching feed: $url")
                 val articles = fetchFeed(url)
+                Log.d("RssRepository", "Found ${articles.size} articles in $url")
                 allArticles.addAll(articles)
             } catch (e: Exception) {
                 Log.e("RssRepository", "Error fetching feed: $url", e)
@@ -31,7 +33,38 @@ class RssRepository(private val client: OkHttpClient = OkHttpClient()) {
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) throw Exception("Unexpected code $response")
             val body = response.body ?: return emptyList()
-            return parseRss(body.byteStream(), url)
+            val articles = parseRss(body.byteStream(), url)
+            
+            // Try to find missing images for the first few articles to keep it snappy
+            return articles.mapIndexed { index, article ->
+                if (article.urlToImage == null && index < 5) {
+                    article.copy(urlToImage = fetchOpenGraphImage(article.url))
+                } else {
+                    article
+                }
+            }
+        }
+    }
+
+    private fun fetchOpenGraphImage(url: String): String? {
+        return try {
+            val request = Request.Builder().url(url).header("User-Agent", "Mozilla/5.0").build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return null
+                val html = response.body?.string() ?: return null
+                
+                // Look for og:image or twitter:image
+                val ogImage = Regex("<meta [^>]*property=[\"']og:image[\"'][^>]*content=[\"']([^\"']+)[\"']", RegexOption.IGNORE_CASE).find(html)?.groupValues?.get(1)
+                    ?: Regex("<meta [^>]*content=[\"']([^\"']+)[\"'][^>]*property=[\"']og:image[\"']", RegexOption.IGNORE_CASE).find(html)?.groupValues?.get(1)
+                
+                val twitterImage = if (ogImage == null) {
+                    Regex("<meta [^>]*name=[\"']twitter:image[\"'][^>]*content=[\"']([^\"']+)[\"']", RegexOption.IGNORE_CASE).find(html)?.groupValues?.get(1)
+                } else null
+                
+                ogImage ?: twitterImage
+            }
+        } catch (e: Exception) {
+            null
         }
     }
 
@@ -49,66 +82,96 @@ class RssRepository(private val client: OkHttpClient = OkHttpClient()) {
         var currentPubDate: String? = null
         var currentImageUrl: String? = null
         
-        val sourceName = feedUrl.substringAfter("://").substringBefore("/")
+        var sourceName = feedUrl.substringAfter("://").substringBefore("/")
+        if (sourceName.startsWith("www.")) sourceName = sourceName.substring(4)
+        sourceName = sourceName.capitalize(Locale.getDefault())
 
-        while (eventType != XmlPullParser.END_DOCUMENT) {
-            val name = parser.name
-            when (eventType) {
-                XmlPullParser.START_TAG -> {
-                    if (name.equals("item", ignoreCase = true) || name.equals("entry", ignoreCase = true)) {
-                        currentTitle = null
-                        currentLink = null
-                        currentDescription = null
-                        currentPubDate = null
-                        currentImageUrl = null
-                    } else if (name.equals("title", ignoreCase = true)) {
-                        currentTitle = parser.nextText()
-                    } else if (name.equals("link", ignoreCase = true)) {
-                        val rel = parser.getAttributeValue(null, "rel")
-                        if (rel == "alternate" || rel == null) {
-                            val href = parser.getAttributeValue(null, "href")
-                            currentLink = href ?: parser.nextText()
-                        }
-                    } else if (name.equals("description", ignoreCase = true) || name.equals("summary", ignoreCase = true)) {
-                        currentDescription = parser.nextText()
-                    } else if (name.equals("pubDate", ignoreCase = true) || name.equals("published", ignoreCase = true) || name.equals("updated", ignoreCase = true)) {
-                        currentPubDate = parser.nextText()
-                    } else if (name.equals("enclosure", ignoreCase = true)) {
-                        val type = parser.getAttributeValue(null, "type")
-                        if (type?.startsWith("image/") == true) {
-                            currentImageUrl = parser.getAttributeValue(null, "url")
-                        }
-                    } else if (name.equals("media:content", ignoreCase = true) || name.equals("content", ignoreCase = true)) {
-                        val url = parser.getAttributeValue(null, "url")
-                        if (url != null) {
-                            currentImageUrl = url
+        try {
+            while (eventType != XmlPullParser.END_DOCUMENT) {
+                val name = parser.name
+                when (eventType) {
+                    XmlPullParser.START_TAG -> {
+                        when {
+                            name.equals("item", ignoreCase = true) || name.equals("entry", ignoreCase = true) -> {
+                                currentTitle = null
+                                currentLink = null
+                                currentDescription = null
+                                currentPubDate = null
+                                currentImageUrl = null
+                            }
+                            name.equals("title", ignoreCase = true) -> currentTitle = parser.nextText()
+                            name.equals("link", ignoreCase = true) -> {
+                                val rel = parser.getAttributeValue(null, "rel")
+                                if (rel == "alternate" || rel == null) {
+                                    val href = parser.getAttributeValue(null, "href")
+                                    currentLink = href ?: parser.nextText()
+                                }
+                            }
+                            name.equals("description", ignoreCase = true) || name.equals("summary", ignoreCase = true) || name.equals("content:encoded", ignoreCase = true) -> {
+                                val text = parser.nextText()
+                                if (currentDescription == null || name.equals("description", ignoreCase = true)) {
+                                    currentDescription = cleanHtml(text)
+                                }
+                                if (currentImageUrl == null) {
+                                    currentImageUrl = extractFirstImageUrl(text)
+                                }
+                            }
+                            name.equals("pubDate", ignoreCase = true) || name.equals("published", ignoreCase = true) || name.equals("updated", ignoreCase = true) -> {
+                                currentPubDate = parser.nextText()
+                            }
+                            name.equals("enclosure", ignoreCase = true) -> {
+                                val type = parser.getAttributeValue(null, "type")
+                                if (type?.startsWith("image/") == true) {
+                                    currentImageUrl = parser.getAttributeValue(null, "url")
+                                }
+                            }
+                            name.equals("media:content", ignoreCase = true) || name.equals("content", ignoreCase = true) || name.equals("media:thumbnail", ignoreCase = true) || name.equals("media:group", ignoreCase = true) -> {
+                                val url = parser.getAttributeValue(null, "url")
+                                val type = parser.getAttributeValue(null, "type")
+                                val medium = parser.getAttributeValue(null, "medium")
+                                
+                                if (url != null) {
+                                    if (currentImageUrl == null || medium == "image" || type?.startsWith("image/") == true) {
+                                        currentImageUrl = url
+                                    }
+                                } else if (name.equals("media:group", ignoreCase = true)) {
+                                    // Deep dive into media:group if needed, but parser.next() might be better
+                                }
+                            }
                         }
                     }
-                }
-                XmlPullParser.END_TAG -> {
-                    if (name.equals("item", ignoreCase = true) || name.equals("entry", ignoreCase = true)) {
-                        if (currentTitle != null && currentLink != null) {
-                            articles.add(
-                                NewsArticle(
-                                    title = currentTitle,
-                                    description = currentDescription?.let { cleanHtml(it) },
-                                    url = currentLink,
-                                    urlToImage = currentImageUrl,
-                                    publishedAt = formatPubDate(currentPubDate),
-                                    source = NewsSource(id = "rss", name = sourceName)
+                    XmlPullParser.END_TAG -> {
+                        if (name.equals("item", ignoreCase = true) || name.equals("entry", ignoreCase = true)) {
+                            if (currentTitle != null && currentLink != null) {
+                                articles.add(
+                                    NewsArticle(
+                                        title = currentTitle,
+                                        description = currentDescription?.let { cleanHtml(it) },
+                                        url = currentLink,
+                                        urlToImage = currentImageUrl,
+                                        publishedAt = formatPubDate(currentPubDate),
+                                        source = NewsSource(id = "rss", name = sourceName)
+                                    )
                                 )
-                            )
+                            }
                         }
                     }
                 }
+                eventType = parser.next()
             }
-            eventType = parser.next()
+        } catch (e: Exception) {
+            Log.e("RssRepository", "XML Parse Error in $feedUrl: ${e.message}")
         }
         return articles
     }
 
     private fun cleanHtml(html: String): String {
-        return html.replace(Regex("<[^>]*>"), "").trim()
+        return html.replace(Regex("<[^>]*>"), "").replace("&nbsp;", " ").trim()
+    }
+
+    private fun extractFirstImageUrl(html: String): String? {
+        val pattern = Regex("<img [^>]*src=[\"']([^\"']+)[\"']", RegexOption.IGNORE_CASE)
+        return pattern.find(html)?.groupValues?.get(1)
     }
 
     private fun formatPubDate(pubDate: String?): String {

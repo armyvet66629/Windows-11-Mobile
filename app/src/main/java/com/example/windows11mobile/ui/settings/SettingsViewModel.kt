@@ -45,6 +45,12 @@ class SettingsViewModel(
     val pageOrder: StateFlow<List<String>> = repository.pageOrder
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SettingsRepository.DEFAULT_PAGE_ORDER)
 
+    val hiddenPages: StateFlow<Set<String>> = repository.hiddenPages
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
+
+    val statusBarMode: StateFlow<String> = repository.statusBarMode
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "auto")
+
     private val _installedApps = MutableStateFlow<List<AppInfo>>(emptyList())
     val installedApps = _installedApps.asStateFlow()
 
@@ -111,6 +117,18 @@ class SettingsViewModel(
     fun setPageOrder(order: List<String>) {
         viewModelScope.launch {
             repository.setPageOrder(order)
+        }
+    }
+
+    fun setHiddenPages(pages: Set<String>) {
+        viewModelScope.launch {
+            repository.setHiddenPages(pages)
+        }
+    }
+
+    fun setStatusBarMode(mode: String) {
+        viewModelScope.launch {
+            repository.setStatusBarMode(mode)
         }
     }
 }

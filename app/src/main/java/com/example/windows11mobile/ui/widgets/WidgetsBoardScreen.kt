@@ -8,6 +8,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -22,11 +23,20 @@ import androidx.compose.material3.pulltorefresh.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -43,6 +53,7 @@ import com.example.windows11mobile.ui.news.NewsCard
 import com.example.windows11mobile.ui.news.NewsHeader
 import com.example.windows11mobile.ui.news.CustomizeFeedDialog
 import com.example.windows11mobile.ui.home.WidgetHostItem
+import com.example.windows11mobile.data.TileSize
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.text.SimpleDateFormat
 import java.util.*
@@ -66,13 +77,17 @@ fun WidgetsBoardScreen(
     val tasks by newsViewModel.tasks.collectAsStateWithLifecycle()
     val calendarEvents by newsViewModel.calendarEvents.collectAsStateWithLifecycle()
     val availableWidgets by newsViewModel.availableWidgets.collectAsStateWithLifecycle()
+    val currentMedia by newsViewModel.currentMedia.collectAsStateWithLifecycle()
     
+    val haptics = LocalHapticFeedback.current
+    
+    var isEditMode by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableStateOf(0) } // 0 for Widgets, 1 for News
     var profileImageUri by remember { mutableStateOf<Uri?>(null) }
     var showCustomizeDialog by remember { mutableStateOf(false) }
     var showWidgetPicker by remember { mutableStateOf(false) }
     var pendingWidgetInfo by remember { mutableStateOf<android.appwidget.AppWidgetProviderInfo?>(null) }
-    var pendingWidgetId by remember { mutableStateOf(-1) }
+    var pendingWidgetId by remember { mutableIntStateOf(-1) }
     
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -223,9 +238,20 @@ fun WidgetsBoardScreen(
             modifier = Modifier.fillMaxSize()
         ) {
             LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp)
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onLongPress = { isEditMode = true },
+                            onTap = { isEditMode = false }
+                        )
+                    },
                 verticalArrangement = Arrangement.spacedBy(16.dp),
-                contentPadding = PaddingValues(bottom = 120.dp, top = 20.dp)
+                contentPadding = PaddingValues(
+                    bottom = 120.dp, 
+                    top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 20.dp
+                )
             ) {
                 // Master Dashboard Header
                 item {
@@ -333,37 +359,119 @@ fun WidgetsBoardScreen(
                         val surfaceAlpha = if (item.isWidget) 0f else 0.4f
                         val surfaceEffect = if (item.isWidget) FluentEffect.MICA else FluentEffect.ACRYLIC
                         
-                        FluentSurface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .combinedClickable(
-                                    onClick = {},
-                                    onLongClick = { widgetToDelete = item.id }
-                                ),
-                            shape = RoundedCornerShape(24.dp),
-                            alpha = surfaceAlpha,
-                            effect = surfaceEffect,
-                            blurRadius = if (item.isWidget) 0 else 80,
-                            tintColor = Color.Black.copy(alpha = 0.2f),
-                            borderAlpha = if (item.isWidget) 0f else 0.1f
-                        ) {
-                            Box(modifier = Modifier.fillMaxWidth()) {
-                                Column {
-                                    when {
-                                        item.isWidget && item.widgetId != null -> {
-                                            Box(modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp)) {
+                        val itemHeight = when(item.size) {
+                            TileSize.SMALL -> 120.dp
+                            TileSize.MEDIUM -> 240.dp
+                            TileSize.WIDE -> 240.dp
+                            TileSize.LARGE -> 480.dp
+                            else -> 240.dp
+                        }
+
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            FluentSurface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .combinedClickable(
+                                        onClick = {},
+                                        onLongClick = { 
+                                            isEditMode = true
+                                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        }
+                                    ),
+                                shape = RoundedCornerShape(24.dp),
+                                alpha = surfaceAlpha,
+                                effect = surfaceEffect,
+                                blurRadius = if (item.isWidget) 0 else 80,
+                                tintColor = Color.Black.copy(alpha = 0.2f),
+                                borderAlpha = if (item.isWidget) 0f else 0.1f
+                            ) {
+                                Box(modifier = Modifier.fillMaxWidth().heightIn(min = itemHeight)) {
+                                    Column {
+                                        when {
+                                            item.isWidget && item.widgetId != null -> {
                                                 WidgetHostItem(widgetId = item.widgetId, sharedHost = appWidgetHost)
                                             }
+                                            item.specialType == "calendar" -> CalendarWidget(calendarEvents)
+                                            item.specialType == "music" -> MusicBoardWidget(
+                                                media = currentMedia,
+                                                onPlayPause = { newsViewModel.mediaPlayPause() },
+                                                onSkipNext = { newsViewModel.mediaSkipNext() },
+                                                onSkipPrevious = { newsViewModel.mediaSkipPrevious() }
+                                            )
+                                            item.specialType == "tasks" -> TasksWidget(
+                                                tasks = tasks, 
+                                                onToggle = { newsViewModel.toggleTask(it) }, 
+                                                onAdd = { newsViewModel.addTask(it) },
+                                                onClear = { newsViewModel.clearTasks() }
+                                            )
                                         }
-                                        item.specialType == "calendar" -> CalendarWidget(calendarEvents)
-                                        item.specialType == "tasks" -> TasksWidget(
-                                            tasks = tasks, 
-                                            onToggle = { newsViewModel.toggleTask(it) }, 
-                                            onAdd = { newsViewModel.addTask(it) },
-                                            onClear = { newsViewModel.clearTasks() }
+                                    }
+                                }
+                            }
+
+                            if (isEditMode) {
+                                // Resize Button (Top Right)
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(12.dp)
+                                        .zIndex(10f)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .clip(CircleShape)
+                                            .background(MaterialTheme.colorScheme.primary)
+                                            .clickable {
+                                                val nextSize = when (item.size) {
+                                                    TileSize.SMALL -> TileSize.MEDIUM
+                                                    TileSize.MEDIUM -> TileSize.WIDE
+                                                    TileSize.WIDE -> TileSize.LARGE
+                                                    TileSize.LARGE -> TileSize.SMALL
+                                                }
+                                                newsViewModel.resizeBoardWidget(item.id, nextSize)
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = FluentIcons.Open,
+                                            contentDescription = "Resize",
+                                            modifier = Modifier.size(20.dp).graphicsLayer(rotationZ = 90f),
+                                            tint = MaterialTheme.colorScheme.onPrimary
                                         )
                                     }
                                 }
+
+                                // Delete Button (Top Left)
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.TopStart)
+                                        .padding(12.dp)
+                                        .zIndex(10f)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .clip(CircleShape)
+                                            .background(MaterialTheme.colorScheme.error)
+                                            .clickable { widgetToDelete = item.id },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Close,
+                                            contentDescription = "Remove",
+                                            modifier = Modifier.size(20.dp),
+                                            tint = Color.White
+                                        )
+                                    }
+                                }
+                                
+                                // Selection Border
+                                Box(
+                                    modifier = Modifier
+                                        .matchParentSize()
+                                        .border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(24.dp))
+                                )
                             }
                         }
                     }
@@ -608,6 +716,145 @@ fun TasksWidget(
             shape = RoundedCornerShape(12.dp),
             singleLine = true
         )
+    }
+}
+
+@Composable
+fun MusicBoardWidget(
+    media: com.example.windows11mobile.data.MediaData,
+    onPlayPause: () -> Unit,
+    onSkipNext: () -> Unit,
+    onSkipPrevious: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(240.dp)
+    ) {
+        // Album Art Background
+        if (media.albumArt != null) {
+            androidx.compose.foundation.Image(
+                bitmap = media.albumArt.asImageBitmap(),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize().alpha(0.6f),
+                contentScale = ContentScale.Crop
+            )
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(Color.Black.copy(alpha = 0.2f), Color.Black.copy(alpha = 0.6f))
+                        )
+                    )
+            )
+        } else {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.linearGradient(
+                            colors = listOf(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f), Color.Transparent)
+                        )
+                    )
+            )
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            verticalArrangement = Arrangement.Center
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Rounded.MusicNote, 
+                    contentDescription = null, 
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    if (media.isPlaying) "NOW PLAYING" else "MUSIC",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Black,
+                    color = MaterialTheme.colorScheme.primary,
+                    letterSpacing = 2.sp
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            if (media.title != null) {
+                Text(
+                    text = media.title,
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Black,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = Color.White
+                )
+                Text(
+                    text = media.artist ?: "Unknown Artist",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Color.White.copy(alpha = 0.7f),
+                    fontWeight = FontWeight.Bold
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = onSkipPrevious,
+                        modifier = Modifier.size(56.dp)
+                    ) {
+                        Icon(
+                            Icons.Rounded.SkipPrevious, 
+                            contentDescription = "Previous", 
+                            tint = Color.White,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+
+                    FloatingActionButton(
+                        onClick = onPlayPause,
+                        containerColor = Color.White.copy(alpha = 0.2f),
+                        contentColor = Color.White,
+                        shape = CircleShape,
+                        elevation = FloatingActionButtonDefaults.elevation(0.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (media.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                            contentDescription = "Play/Pause",
+                            modifier = Modifier.size(40.dp)
+                        )
+                    }
+
+                    IconButton(
+                        onClick = onSkipNext,
+                        modifier = Modifier.size(56.dp)
+                    ) {
+                        Icon(
+                            Icons.Rounded.SkipNext, 
+                            contentDescription = "Next", 
+                            tint = Color.White,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+                }
+            } else {
+                Text(
+                    "Nothing playing",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+            }
+        }
     }
 }
 

@@ -23,6 +23,8 @@ interface SettingsRepository {
     val useFahrenheit: Flow<Boolean>
     val showTaskbar: Flow<Boolean>
     val pageOrder: Flow<List<String>>
+    val hiddenPages: Flow<Set<String>>
+    val statusBarMode: Flow<String> // "auto", "light", "dark"
     val notesJson: Flow<String?>
 
     suspend fun setDarkMode(isDarkMode: Boolean)
@@ -42,6 +44,8 @@ interface SettingsRepository {
     suspend fun setUseFahrenheit(useFahrenheit: Boolean)
     suspend fun setShowTaskbar(show: Boolean)
     suspend fun setPageOrder(order: List<String>)
+    suspend fun setHiddenPages(pages: Set<String>)
+    suspend fun setStatusBarMode(mode: String)
     suspend fun setNotesJson(json: String)
 
     companion object {
@@ -58,6 +62,8 @@ interface SettingsRepository {
         val USE_FAHRENHEIT = booleanPreferencesKey("use_fahrenheit")
         val SHOW_TASKBAR = booleanPreferencesKey("show_taskbar")
         val PAGE_ORDER = stringPreferencesKey("page_order")
+        val HIDDEN_PAGES = stringSetPreferencesKey("hidden_pages")
+        val STATUS_BAR_MODE = stringPreferencesKey("status_bar_mode")
         val NOTES_JSON = stringPreferencesKey("notes_json")
         
         val DEFAULT_PINNED_APPS = setOf(
@@ -67,7 +73,10 @@ interface SettingsRepository {
             "com.google.android.dialer"
         )
         val DEFAULT_NEWS_CATEGORIES = setOf("technology", "business", "science")
-        val DEFAULT_RSS_FEEDS = setOf("https://www.theverge.com/rss/index.xml")
+        val DEFAULT_RSS_FEEDS = setOf(
+            "https://www.theverge.com/rss/index.xml",
+            "https://blackhawkup.com/posts/feed/"
+        )
         val DEFAULT_ACCENT_COLOR = 0xFF0078D4.toInt()
         val DEFAULT_PAGE_ORDER = listOf("notes", "board", "desktop", "apps", "people")
     }
@@ -126,6 +135,14 @@ class RealSettingsRepository(private val context: Context) : SettingsRepository 
 
     override val pageOrder: Flow<List<String>> = dataStore.data.map { preferences ->
         preferences[SettingsRepository.PAGE_ORDER]?.split(",") ?: SettingsRepository.DEFAULT_PAGE_ORDER
+    }
+
+    override val hiddenPages: Flow<Set<String>> = dataStore.data.map { preferences ->
+        preferences[SettingsRepository.HIDDEN_PAGES] ?: emptySet()
+    }
+
+    override val statusBarMode: Flow<String> = dataStore.data.map { preferences ->
+        preferences[SettingsRepository.STATUS_BAR_MODE] ?: "auto"
     }
 
     override val notesJson: Flow<String?> = dataStore.data.map { preferences ->
@@ -241,6 +258,18 @@ class RealSettingsRepository(private val context: Context) : SettingsRepository 
     override suspend fun setPageOrder(order: List<String>) {
         dataStore.edit { preferences ->
             preferences[SettingsRepository.PAGE_ORDER] = order.joinToString(",")
+        }
+    }
+
+    override suspend fun setHiddenPages(pages: Set<String>) {
+        dataStore.edit { preferences ->
+            preferences[SettingsRepository.HIDDEN_PAGES] = pages
+        }
+    }
+
+    override suspend fun setStatusBarMode(mode: String) {
+        dataStore.edit { preferences ->
+            preferences[SettingsRepository.STATUS_BAR_MODE] = mode
         }
     }
 

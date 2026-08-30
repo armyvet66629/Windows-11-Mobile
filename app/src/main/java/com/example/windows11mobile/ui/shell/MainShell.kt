@@ -48,11 +48,14 @@ import com.example.windows11mobile.ui.notes.NotesViewModel
 import com.example.windows11mobile.data.SettingsRepository
 import com.example.windows11mobile.ui.settings.SettingsScreen
 import com.example.windows11mobile.ui.settings.SettingsViewModel
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import com.example.windows11mobile.ui.settings.SettingsViewModelFactory
 import com.example.windows11mobile.ui.theme.rememberWallpaperColor
 import com.example.windows11mobile.ui.components.FluentSurface
 import com.example.windows11mobile.ui.components.FluentEffect
 import com.example.windows11mobile.ui.components.WindowsDock
+import kotlinx.coroutines.launch
 
 @Composable
 fun MainShell(
@@ -62,6 +65,7 @@ fun MainShell(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
     val appRepository = remember { RealAppRepository(context) }
     val newsRepository = remember { RealNewsRepository(null) } // No API key for now
     val rssRepository = remember { com.example.windows11mobile.data.RssRepository() }
@@ -96,20 +100,43 @@ fun MainShell(
     val showTaskbar by settingsRepository.showTaskbar.collectAsStateWithLifecycle(initialValue = false)
     val pinnedApps by settingsRepository.pinnedApps.collectAsStateWithLifecycle(initialValue = emptySet())
     val installedApps by homeViewModel.installedApps.collectAsStateWithLifecycle()
+    val isDragging by homeViewModel.isDragging.collectAsStateWithLifecycle()
+    val isEditMode by homeViewModel.isEditMode.collectAsStateWithLifecycle()
     val pageOrder by settingsRepository.pageOrder.collectAsStateWithLifecycle(initialValue = SettingsRepository.DEFAULT_PAGE_ORDER)
+    val hiddenPages by settingsRepository.hiddenPages.collectAsStateWithLifecycle(initialValue = emptySet())
     
+    val visiblePages = remember(pageOrder, hiddenPages) {
+        pageOrder.filter { it !in hiddenPages || it == "desktop" || it == "apps" }
+    }
+
     val pagerState = rememberPagerState(
-        initialPage = pageOrder.indexOf("desktop").coerceAtLeast(0)
-    ) { pageOrder.size }
+        initialPage = visiblePages.indexOf("desktop").coerceAtLeast(0)
+    ) { visiblePages.size }
+    
+    // Handle home button press to return to desktop
+    LaunchedEffect(homeViewModel) {
+        homeViewModel.homeButtonPressed.collect {
+            val desktopIndex = visiblePages.indexOf("desktop")
+            if (desktopIndex != -1 && pagerState.currentPage != desktopIndex) {
+                pagerState.animateScrollToPage(desktopIndex)
+            }
+        }
+    }
+    
+    // Haptic feedback for page swiping
+    LaunchedEffect(pagerState.currentPage) {
+        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+    }
     
     val currentRoute = backStack.lastOrNull()
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
         containerColor = Color.Transparent, // Ensure background shows through
-        contentColor = MaterialTheme.colorScheme.onBackground
+        contentColor = MaterialTheme.colorScheme.onBackground,
+        contentWindowInsets = WindowInsets(0.dp) // Disable automatic insets to allow content behind status bar
     ) { innerPadding ->
-        Box(modifier = Modifier.fillMaxSize()) {
+        Box(modifier = Modifier.fillMaxSize().padding(bottom = innerPadding.calculateBottomPadding())) {
             // Background Wallpaper (Edge-to-Edge)
             if (wallpaperUri != null) {
                 AsyncImage(
@@ -127,16 +154,19 @@ fun MainShell(
                 )
             }
 
-            // Content Area (Edge-to-Edge now that Dock is removed)
-            Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+            // Content Area (Edge-to-Edge)
+            // Apply only bottom padding for the navigation bar/dock if needed, 
+            // but for a launcher, we usually want full edge-to-edge.
+            Box(modifier = Modifier.fillMaxSize()) {
                 if (currentRoute in listOf(Dest.Desktop, Dest.AppDrawer, Dest.NewsFeed, null)) {
                     Box(modifier = Modifier.fillMaxSize()) {
                         HorizontalPager(
                             state = pagerState,
                             modifier = Modifier.fillMaxSize(),
-                            reverseLayout = false
+                            reverseLayout = false,
+                            userScrollEnabled = !isDragging && !isEditMode
                         ) { pageIndex ->
-                            val pageId = pageOrder.getOrNull(pageIndex) ?: ""
+                            val pageId = visiblePages.getOrNull(pageIndex) ?: ""
                             when (pageId) {
                                 "board" -> {
                                     val viewModel: NewsFeedViewModel = viewModel(
@@ -149,12 +179,21 @@ fun MainShell(
                                     )
                                 }
                                 "desktop" -> {
+                                    val scope = rememberCoroutineScope()
                                     HomeScreen(
                                         viewModel = homeViewModel,
                                         onAppClick = { packageName ->
                                             val intent = context.packageManager.getLaunchIntentForPackage(packageName)
                                             if (intent != null) {
                                                 context.startActivity(intent)
+                                            }
+                                        },
+                                        onAddAppsClick = {
+                                            scope.launch {
+                                                val targetIndex = visiblePages.indexOf("apps")
+                                                if (targetIndex != -1) {
+                                                    pagerState.animateScrollToPage(targetIndex)
+                                                }
                                             }
                                         }
                                     )
@@ -163,12 +202,26 @@ fun MainShell(
                                     val viewModel: AppDrawerViewModel = viewModel(
                                         factory = AppDrawerViewModelFactory(appRepository, settingsRepository, context)
                                     )
+                                    val scope = rememberCoroutineScope()
+                                    val currentOpenFolderId by homeViewModel.openFolderId.collectAsStateWithLifecycle()
+                                    
                                     AppDrawerScreen(
                                         viewModel = viewModel,
                                         onAppClick = { app ->
-                                            val intent = context.packageManager.getLaunchIntentForPackage(app.packageName)
-                                            if (intent != null) {
-                                                context.startActivity(intent)
+                                            if (currentOpenFolderId != null) {
+                                                homeViewModel.addTile(app.packageName, app.name)
+                                                homeViewModel.openFolder(null)
+                                                scope.launch {
+                                                    val targetIndex = visiblePages.indexOf("desktop")
+                                                    if (targetIndex != -1) {
+                                                        pagerState.animateScrollToPage(targetIndex)
+                                                    }
+                                                }
+                                            } else {
+                                                val intent = context.packageManager.getLaunchIntentForPackage(app.packageName)
+                                                if (intent != null) {
+                                                    context.startActivity(intent)
+                                                }
                                             }
                                         },
                                         onSettingsClick = {

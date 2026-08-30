@@ -11,6 +11,10 @@ import com.example.windows11mobile.data.NewsRepository
 import com.example.windows11mobile.data.SettingsRepository
 import com.example.windows11mobile.data.CalendarRepository
 import com.example.windows11mobile.data.CalendarEvent
+import com.example.windows11mobile.data.NotificationManager
+import com.example.windows11mobile.data.TileSize
+import com.example.windows11mobile.services.WindowsNotificationListener
+import android.content.Intent
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
@@ -46,6 +50,8 @@ class NewsFeedViewModel(
 
     private val _boardWidgets = MutableStateFlow<List<HomeTile>>(emptyList())
     val boardWidgets: StateFlow<List<HomeTile>> = _boardWidgets.asStateFlow()
+
+    val currentMedia = NotificationManager.currentMedia
 
     private val appWidgetManager = AppWidgetManager.getInstance(context)
 
@@ -88,19 +94,63 @@ class NewsFeedViewModel(
         }
 
         viewModelScope.launch {
-            settingsRepository.boardWidgets.collect { json ->
-                if (json != null) {
-                    try {
-                        _boardWidgets.value = Json.decodeFromString(json)
-                    } catch (e: Exception) {}
-                } else if (_boardWidgets.value.isEmpty()) {
-                    _boardWidgets.value = listOf(
-                        HomeTile("calendar", null, "Calendar", specialType = "calendar"),
-                        HomeTile("tasks", null, "To Do", specialType = "tasks")
-                    )
+            settingsRepository.rssFeeds.first().let { feeds ->
+                if (!feeds.contains("https://blackhawkup.com/posts/feed/")) {
+                    settingsRepository.addRssFeed("https://blackhawkup.com/posts/feed/")
                 }
             }
         }
+
+        viewModelScope.launch {
+            settingsRepository.boardWidgets.collect { json ->
+                if (json != null) {
+                    try {
+                        val decoded: List<HomeTile> = Json.decodeFromString(json)
+                        // Migration: Add music widget if missing
+                        if (!decoded.any { it.specialType == "music" }) {
+                            val migrated = listOf(
+                                HomeTile("music_widget", null, "Music", TileSize.WIDE, specialType = "music")
+                            ) + decoded
+                            _boardWidgets.value = migrated
+                            saveBoardWidgets(migrated)
+                        } else {
+                            _boardWidgets.value = decoded
+                        }
+                    } catch (e: Exception) {
+                        _boardWidgets.value = getDefaultBoardWidgets()
+                    }
+                } else if (_boardWidgets.value.isEmpty()) {
+                    _boardWidgets.value = getDefaultBoardWidgets()
+                }
+            }
+        }
+    }
+
+    private fun getDefaultBoardWidgets() = listOf(
+        HomeTile("music_widget", null, "Music", TileSize.WIDE, specialType = "music"),
+        HomeTile("calendar", null, "Calendar", specialType = "calendar"),
+        HomeTile("tasks", null, "To Do", specialType = "tasks")
+    )
+
+    fun mediaPlayPause() {
+        val intent = Intent(context, WindowsNotificationListener::class.java).apply {
+            action = WindowsNotificationListener.ACTION_MEDIA_PLAY_PAUSE
+        }
+        context.startService(intent)
+    }
+
+    fun mediaSkipNext() {
+        val intent = Intent(context, WindowsNotificationListener::class.java).apply {
+            action = WindowsNotificationListener.ACTION_MEDIA_SKIP_NEXT
+        }
+        context.startService(intent)
+    }
+
+    fun mediaSkipPrevious() {
+        val intent = Intent(context, WindowsNotificationListener::class.java).apply {
+            action = WindowsNotificationListener.ACTION_MEDIA_SKIP_PREVIOUS
+        }
+        context.startService(intent)
     }
 
     fun addBoardWidget(widgetId: Int, label: String) {
@@ -117,6 +167,14 @@ class NewsFeedViewModel(
 
     fun removeBoardWidget(id: String) {
         val updated = _boardWidgets.value.filter { it.id != id }
+        _boardWidgets.value = updated
+        saveBoardWidgets(updated)
+    }
+
+    fun resizeBoardWidget(id: String, newSize: com.example.windows11mobile.data.TileSize) {
+        val updated = _boardWidgets.value.map {
+            if (it.id == id) it.copy(size = newSize) else it
+        }
         _boardWidgets.value = updated
         saveBoardWidgets(updated)
     }

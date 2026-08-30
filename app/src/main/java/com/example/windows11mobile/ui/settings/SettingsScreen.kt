@@ -47,6 +47,8 @@ fun SettingsScreen(
     val useFahrenheit by viewModel.useFahrenheit.collectAsStateWithLifecycle()
     val showTaskbar by viewModel.showTaskbar.collectAsStateWithLifecycle()
     val pageOrder by viewModel.pageOrder.collectAsStateWithLifecycle()
+    val hiddenPages by viewModel.hiddenPages.collectAsStateWithLifecycle()
+    val statusBarMode by viewModel.statusBarMode.collectAsStateWithLifecycle()
     val tileOpacity by viewModel.tileOpacity.collectAsStateWithLifecycle()
     
     var showAddAppDialog by remember { mutableStateOf(false) }
@@ -139,6 +141,49 @@ fun SettingsScreen(
                     tileOpacity = tileOpacity,
                     onCheckedChange = { viewModel.setDarkMode(it) }
                 )
+            }
+
+            // Status Bar Style
+            item {
+                FluentSurface(
+                    modifier = Modifier.fillMaxWidth(),
+                    alpha = tileOpacity,
+                    effect = com.example.windows11mobile.ui.components.FluentEffect.ACRYLIC,
+                    blurRadius = 80,
+                    tintColor = Color.Black.copy(alpha = 0.15f),
+                    luminosityAlpha = 0.1f,
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Rounded.ViewStream, contentDescription = null, modifier = Modifier.size(24.dp))
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Text("Status Bar Icons", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            val options = listOf("auto", "light", "dark")
+                            options.forEach { mode ->
+                                val isSelected = statusBarMode == mode
+                                Button(
+                                    onClick = { viewModel.setStatusBarMode(mode) },
+                                    modifier = Modifier.weight(1f),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                        contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+                                    ),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(0.dp)
+                                ) {
+                                    Text(mode.uppercase(), style = MaterialTheme.typography.labelMedium)
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             // Accent Color Picker
@@ -405,43 +450,6 @@ fun SettingsScreen(
                         .padding(horizontal = 20.dp, vertical = 10.dp)
                 ) {
                     Text(
-                        "Launcher Settings",
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Black,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                }
-            }
-
-            item {
-                SettingsClickableItem(
-                    title = "Set as Default Launcher",
-                    subtitle = "Assign Windows 11 Mobile as your primary home screen",
-                    icon = Icons.Rounded.Home,
-                    tileOpacity = tileOpacity,
-                    onClick = {
-                        try {
-                            val intent = Intent(android.provider.Settings.ACTION_HOME_SETTINGS)
-                            context.startActivity(intent)
-                        } catch (e: Exception) {
-                            // Fallback for older Android versions
-                            val intent = Intent(android.provider.Settings.ACTION_SETTINGS)
-                            context.startActivity(intent)
-                        }
-                    }
-                )
-            }
-
-            item {
-                Spacer(modifier = Modifier.height(24.dp))
-                Box(
-                    modifier = Modifier
-                        .padding(vertical = 12.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f))
-                        .padding(horizontal = 20.dp, vertical = 10.dp)
-                ) {
-                    Text(
                         "Taskbar & Dock",
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Black,
@@ -541,8 +549,10 @@ fun SettingsScreen(
     if (showPageManager) {
         PageManagerDialog(
             currentOrder = pageOrder,
+            hiddenPages = hiddenPages,
             onDismiss = { showPageManager = false },
-            onOrderChange = { viewModel.setPageOrder(it) }
+            onOrderChange = { viewModel.setPageOrder(it) },
+            onHiddenPagesChange = { viewModel.setHiddenPages(it) }
         )
     }
 }
@@ -550,10 +560,13 @@ fun SettingsScreen(
 @Composable
 fun PageManagerDialog(
     currentOrder: List<String>,
+    hiddenPages: Set<String>,
     onDismiss: () -> Unit,
-    onOrderChange: (List<String>) -> Unit
+    onOrderChange: (List<String>) -> Unit,
+    onHiddenPagesChange: (Set<String>) -> Unit
 ) {
     var tempOrder by remember { mutableStateOf(currentOrder) }
+    var tempHidden by remember { mutableStateOf(hiddenPages) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -561,61 +574,100 @@ fun PageManagerDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    "Rearrange your screens by moving them up or down.",
+                    "Rearrange your screens or hide them completely. Hidden pages won't appear in the main launcher flow.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                 )
                 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                tempOrder.forEachIndexed { index, pageId ->
-                    val pageName = when(pageId) {
-                        "notes" -> "Notes"
-                        "board" -> "Widgets & News"
-                        "desktop" -> "Start Screen"
-                        "apps" -> "App List"
-                        "people" -> "People Hub"
-                        else -> pageId
-                    }
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                            .padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(pageName, fontWeight = FontWeight.Bold)
-                        Row {
-                            IconButton(
-                                onClick = {
-                                    if (index > 0) {
-                                        val mutable = tempOrder.toMutableList()
-                                        val item = mutable.removeAt(index)
-                                        mutable.add(index - 1, item)
-                                        tempOrder = mutable
-                                    }
-                                },
-                                enabled = index > 0,
-                                modifier = Modifier.size(32.dp)
-                            ) {
-                                Icon(Icons.Rounded.KeyboardArrowUp, contentDescription = "Move Up")
+                Box(modifier = Modifier.heightIn(max = 400.dp)) {
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(tempOrder.size) { index ->
+                            val pageId = tempOrder[index]
+                            val isHidden = tempHidden.contains(pageId)
+                            val pageName = when(pageId) {
+                                "notes" -> "Notes"
+                                "board" -> "Widgets & News"
+                                "desktop" -> "Start Screen"
+                                "apps" -> "App List"
+                                "people" -> "People Hub"
+                                else -> pageId
                             }
-                            IconButton(
-                                onClick = {
-                                    if (index < tempOrder.size - 1) {
-                                        val mutable = tempOrder.toMutableList()
-                                        val item = mutable.removeAt(index)
-                                        mutable.add(index + 1, item)
-                                        tempOrder = mutable
-                                    }
-                                },
-                                enabled = index < tempOrder.size - 1,
-                                modifier = Modifier.size(32.dp)
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(
+                                        if (isHidden) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                                        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                                    )
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = "Move Down")
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = pageName, 
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isHidden) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f) else MaterialTheme.colorScheme.onSurface
+                                    )
+                                    if (isHidden) {
+                                        Text(
+                                            "Hidden", 
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
+                                        )
+                                    }
+                                }
+                                
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    // Hide Toggle
+                                    IconButton(
+                                        onClick = {
+                                            tempHidden = if (isHidden) tempHidden - pageId else tempHidden + pageId
+                                        },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = if (isHidden) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                                            contentDescription = if (isHidden) "Show" else "Hide",
+                                            tint = if (isHidden) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                    
+                                    Spacer(modifier = Modifier.width(8.dp))
+
+                                    // Move Controls
+                                    IconButton(
+                                        onClick = {
+                                            if (index > 0) {
+                                                val mutable = tempOrder.toMutableList()
+                                                val item = mutable.removeAt(index)
+                                                mutable.add(index - 1, item)
+                                                tempOrder = mutable
+                                            }
+                                        },
+                                        enabled = index > 0,
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(Icons.Rounded.KeyboardArrowUp, contentDescription = "Move Up")
+                                    }
+                                    IconButton(
+                                        onClick = {
+                                            if (index < tempOrder.size - 1) {
+                                                val mutable = tempOrder.toMutableList()
+                                                val item = mutable.removeAt(index)
+                                                mutable.add(index + 1, item)
+                                                tempOrder = mutable
+                                            }
+                                        },
+                                        enabled = index < tempOrder.size - 1,
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = "Move Down")
+                                    }
+                                }
                             }
                         }
                     }
@@ -625,6 +677,7 @@ fun PageManagerDialog(
         confirmButton = {
             Button(onClick = {
                 onOrderChange(tempOrder)
+                onHiddenPagesChange(tempHidden)
                 onDismiss()
             }) {
                 Text("Save Changes")
