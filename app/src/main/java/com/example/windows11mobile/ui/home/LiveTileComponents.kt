@@ -207,27 +207,30 @@ fun WeatherForecastBack(weatherData: com.example.windows11mobile.data.WeatherDat
             if (forecast.isEmpty()) {
                 Text(
                     "Forecast data unavailable",
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                 )
             } else {
                 forecast.forEach { day ->
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.weight(1f) // Equal distribution for perfect alignment
+                    ) {
                         Text(
                             text = day.day,
-                            style = MaterialTheme.typography.titleMedium,
+                            style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Icon(
                             imageVector = getWeatherIcon(day.icon),
                             contentDescription = null,
-                            modifier = Modifier.size(32.dp),
+                            modifier = Modifier.size(28.dp),
                             tint = if (day.icon.contains("Rain")) Color(0xFF3498DB) else Color(0xFFFFD700)
                         )
                         Text(
                             text = "${day.temp.toInt()}°",
-                            style = MaterialTheme.typography.titleMedium,
+                            style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.Black,
                             color = MaterialTheme.colorScheme.onSurface
                         )
