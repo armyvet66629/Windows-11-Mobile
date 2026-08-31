@@ -37,6 +37,7 @@ import com.example.windows11mobile.data.AppInfo
 import com.example.windows11mobile.ui.components.FluentSurface
 import com.example.windows11mobile.ui.components.FluentContextMenu
 import com.example.windows11mobile.ui.components.ActionButton
+import com.example.windows11mobile.ui.components.AdvancedFluentMenu
 
 import com.example.windows11mobile.ui.theme.FluentIcons
 import com.example.windows11mobile.ui.components.FluentIcon
@@ -277,171 +278,45 @@ fun AppDrawerScreen(
             val currentApp = selectedAppForMenu
             if (currentApp != null) {
                 val shortcuts = remember(currentApp) { viewModel.getShortcuts(currentApp.packageName) }
-                val pkg = currentApp.packageName.lowercase()
                 
-                FluentContextMenu(
-                    isVisible = true,
-                    title = currentApp.name,
-                    subtitle = currentApp.packageName,
+                AdvancedFluentMenu(
+                    label = currentApp.name,
+                    packageName = currentApp.packageName,
                     icon = currentApp.icon,
-                    onDismiss = { selectedAppForMenu = null }
-                ) {
-                    // App-Specific Primary Actions
-                    when {
-                        pkg.contains("dialer") || pkg.contains("phone") -> {
-                            ActionButton(
-                                text = "New Call",
-                                icon = FluentIcons.Call,
-                                onClick = {
-                                    try {
-                                        context.startActivity(Intent(Intent.ACTION_DIAL))
-                                    } catch (e: Exception) {}
-                                    selectedAppForMenu = null
-                                }
-                            )
-                            Spacer(modifier = Modifier.height(10.dp))
-                            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.1f))
+                    onDismiss = { selectedAppForMenu = null },
+                    isFromHome = false,
+                    onAddToHome = { onAddToHomeScreen(currentApp) },
+                    onPinToTaskbar = { onPinToTaskbar(currentApp) },
+                    onRateAndReview = {
+                        try {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=${currentApp.packageName}")))
+                        } catch (e: Exception) {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=${currentApp.packageName}")))
                         }
-                        pkg.contains("messaging") || pkg.contains("message") || pkg.contains("sms") -> {
-                            ActionButton(
-                                text = "Compose Text",
-                                icon = FluentIcons.Edit,
-                                onClick = {
-                                    try {
-                                        context.startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:")))
-                                    } catch (e: Exception) {}
-                                    selectedAppForMenu = null
-                                }
-                            )
-                            Spacer(modifier = Modifier.height(10.dp))
-                            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.1f))
+                    },
+                    onAppSettings = {
+                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = Uri.fromParts("package", currentApp.packageName, null)
                         }
-                    }
-
-                    if (shortcuts.isNotEmpty()) {
-                        val shortcutSectionTitle = remember(currentApp.packageName) {
-                            val pkgName = currentApp.packageName.lowercase()
-                            when {
-                                pkgName.contains("dialer") || pkgName.contains("phone") -> "FREQUENT CONTACTS"
-                                pkgName.contains("messaging") || pkgName.contains("message") || pkgName.contains("sms") || pkgName.contains("whatsapp") || pkgName.contains("telegram") -> "RECENT CONVERSATIONS"
-                                pkgName.contains("calendar") -> "UPCOMING EVENTS"
-                                pkgName.contains("mail") || pkgName.contains("outlook") || pkgName.contains("gmail") -> "RECENT EMAILS"
-                                pkgName.contains("camera") -> "SHOOTING MODES"
-                                pkgName.contains("chrome") || pkgName.contains("browser") || pkgName.contains("edge") -> "RECENT TABS"
-                                else -> "SHORTCUTS"
-                            }
+                        context.startActivity(intent)
+                    },
+                    onUninstall = {
+                        val intent = Intent(Intent.ACTION_DELETE).apply {
+                            data = Uri.fromParts("package", currentApp.packageName, null)
                         }
-                        
-                        Text(
-                            text = shortcutSectionTitle,
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            letterSpacing = 1.5.sp,
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
-                            modifier = Modifier.padding(bottom = 12.dp)
-                        )
-                        shortcuts.forEach { shortcut ->
-                            val label = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N_MR1) {
-                                shortcut.shortLabel ?: shortcut.longLabel ?: "Shortcut"
-                            } else "Shortcut"
-                            
-                            val shortcutIcon = remember(shortcut) {
-                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N_MR1) {
-                                    try {
-                                        val launcherApps = context.getSystemService(android.content.Context.LAUNCHER_APPS_SERVICE) as android.content.pm.LauncherApps
-                                        launcherApps.getShortcutIconDrawable(shortcut, context.resources.displayMetrics.densityDpi)
-                                    } catch (_: Exception) {
-                                        null
-                                    }
-                                } else null
-                            }
-
-                            ActionButton(
-                                text = label.toString(),
-                                icon = shortcutIcon ?: Icons.AutoMirrored.Rounded.Launch,
-                                onClick = {
-                                    viewModel.launchShortcut(shortcut)
-                                    selectedAppForMenu = null
-                                }
-                            )
-                            Spacer(modifier = Modifier.height(10.dp))
+                        context.startActivity(intent)
+                    },
+                    onShare = {
+                        val intent = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_TEXT, "Check out ${currentApp.name} at https://play.google.com/store/apps/details?id=${currentApp.packageName}")
                         }
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.1f))
-                    }
-
-                    ActionButton(
-                        text = "Pin to Taskbar",
-                        icon = FluentIcons.Pin,
-                        onClick = {
-                            onPinToTaskbar(currentApp)
-                            selectedAppForMenu = null
-                        }
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    ActionButton(
-                        text = "Add to Home Screen",
-                        icon = FluentIcons.Home,
-                        onClick = {
-                            onAddToHomeScreen(currentApp)
-                            selectedAppForMenu = null
-                        }
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.1f))
-                    
-                    ActionButton(
-                        text = "Share this App",
-                        icon = FluentIcons.Share,
-                        onClick = {
-                            val intent = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_TEXT, "Check out ${currentApp.name} at https://play.google.com/store/apps/details?id=${currentApp.packageName}")
-                            }
-                            context.startActivity(Intent.createChooser(intent, "Share ${currentApp.name}"))
-                            selectedAppForMenu = null
-                        }
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    ActionButton(
-                        text = "Rate & Review",
-                        icon = FluentIcons.Star,
-                        onClick = {
-                            try {
-                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=${currentApp.packageName}")))
-                            } catch (e: Exception) {
-                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=${currentApp.packageName}")))
-                            }
-                            selectedAppForMenu = null
-                        }
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.1f))
-
-                    ActionButton(
-                        text = "Uninstall App",
-                        icon = FluentIcons.Uninstall,
-                        onClick = {
-                            val intent = Intent(Intent.ACTION_DELETE).apply {
-                                data = Uri.fromParts("package", currentApp.packageName, null)
-                            }
-                            context.startActivity(intent)
-                            selectedAppForMenu = null
-                        },
-                        contentColor = MaterialTheme.colorScheme.error
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    ActionButton(
-                        text = "App Info",
-                        icon = FluentIcons.Info,
-                        onClick = {
-                            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                data = Uri.fromParts("package", currentApp.packageName, null)
-                            }
-                            context.startActivity(intent)
-                            selectedAppForMenu = null
-                        }
-                    )
-                }
+                        context.startActivity(Intent.createChooser(intent, "Share ${currentApp.name}"))
+                    },
+                    shortcuts = shortcuts,
+                    onShortcutClick = { viewModel.launchShortcut(it) },
+                    tileOpacity = tileOpacity
+                )
             }
         }
     }

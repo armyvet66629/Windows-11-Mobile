@@ -125,7 +125,7 @@ fun MainShell(
     
     // Haptic feedback for page swiping
     LaunchedEffect(pagerState.currentPage) {
-        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
     }
     
     val currentRoute = backStack.lastOrNull()

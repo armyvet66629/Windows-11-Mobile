@@ -79,6 +79,7 @@ import com.example.windows11mobile.data.TileSize
 import com.example.windows11mobile.ui.components.FluentEffect
 import com.example.windows11mobile.ui.components.FluentSurface
 import com.example.windows11mobile.ui.components.AdvancedFluentMenu
+import com.example.windows11mobile.ui.components.ActionButton
 import com.example.windows11mobile.ui.home.ClockTileContent
 import com.example.windows11mobile.ui.home.WeatherTileContent
 import com.example.windows11mobile.ui.home.ClockWeatherTileContent
@@ -142,14 +143,17 @@ fun HomeScreen(
     var dragStartPointerOffset by remember { mutableStateOf(Offset.Zero) }
     var pointerPosition by remember { mutableStateOf(Offset.Zero) }
     
-    var selectedTileForMenu by remember { mutableStateOf<HomeTile?>(null) }
-    var menuExpanded by remember { mutableStateOf(false) }
     var backgroundMenuExpanded by remember { mutableStateOf(false) }
     var showWidgetPicker by remember { mutableStateOf(false) }
     var showNewFolderDialog by remember { mutableStateOf(false) }
     var folderToRename by remember { mutableStateOf<HomeTile?>(null) }
     var folderSourceCenter by remember { mutableStateOf(Offset.Zero) }
     var gridPosition by remember { mutableStateOf(Offset.Zero) }
+
+    val shortcuts = remember(explodedTileId) {
+        val tile = tiles.find { it.id == explodedTileId }
+        tile?.packageName?.let { viewModel.getShortcuts(it) } ?: emptyList()
+    }
 
     var pendingWidgetInfo by remember { mutableStateOf<android.appwidget.AppWidgetProviderInfo?>(null) }
     var pendingWidgetId by remember { mutableIntStateOf(-1) }
@@ -247,10 +251,6 @@ fun HomeScreen(
         if (gridState.isScrollInProgress) {
             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
         }
-    }
-
-    val shortcuts = remember(selectedTileForMenu) {
-        selectedTileForMenu?.packageName?.let { viewModel.getShortcuts(it) } ?: emptyList()
     }
 
     val widgetConfigLauncher = rememberLauncherForActivityResult(
@@ -473,7 +473,7 @@ fun HomeScreen(
                                     val holdJob = launch {
                                         if (!isEditModeState.value) {
                                             // Consistent delay
-                                            delay(850)
+                                            delay(750)
                                             if (draggingTileId == null) {
                                                 viewModel.explodeTile(tile.id)
                                                 isHoldTriggered[0] = true
@@ -682,72 +682,28 @@ fun HomeScreen(
                 FluentSurface(modifier = Modifier.width(280.dp).padding(16.dp), shape = RoundedCornerShape(24.dp), alpha = 0.8f, effect = FluentEffect.ACRYLIC, blurRadius = 120, tintColor = Color.Black.copy(alpha = 0.25f), luminosityAlpha = 0.2f) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text("DESKTOP", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, letterSpacing = 1.5.sp, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(bottom = 12.dp, start = 8.dp))
-                        ActionButton(text = "Add Widget", icon = Icons.Rounded.Widgets, onClick = { backgroundMenuExpanded = false; showWidgetPicker = true })
+                        ActionButton(text = "Add Widget", icon = Icons.Rounded.Widgets, onClick = { 
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            backgroundMenuExpanded = false; showWidgetPicker = true 
+                        })
                         Spacer(modifier = Modifier.height(8.dp))
-                        ActionButton(text = "Create folder", icon = Icons.Rounded.CreateNewFolder, onClick = { backgroundMenuExpanded = false; showNewFolderDialog = true })
+                        ActionButton(text = "Create folder", icon = Icons.Rounded.CreateNewFolder, onClick = { 
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            backgroundMenuExpanded = false; showNewFolderDialog = true 
+                        })
                         Spacer(modifier = Modifier.height(8.dp))
-                        ActionButton(text = "Home Settings", icon = Icons.Rounded.Settings, onClick = { backgroundMenuExpanded = false })
+                        ActionButton(text = "Home Settings", icon = Icons.Rounded.Settings, onClick = { 
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            backgroundMenuExpanded = false 
+                        })
                         Spacer(modifier = Modifier.height(8.dp))
-                        ActionButton(text = "Rearrange tiles", icon = Icons.Rounded.Reorder, onClick = { backgroundMenuExpanded = false; viewModel.setEditMode(true) })
+                        ActionButton(text = "Rearrange tiles", icon = Icons.Rounded.Reorder, onClick = { 
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            backgroundMenuExpanded = false; viewModel.setEditMode(true) 
+                        })
                     }
                 }
             }
-        }
-
-        val explodedTile = tiles.find { it.id == explodedTileId }
-        if (explodedTile != null && draggingTileId == null) {
-            AdvancedFluentMenu(
-                tile = explodedTile,
-                onDismiss = { viewModel.explodeTile(null) },
-                onResize = { viewModel.resizeTile(explodedTile.id, it) },
-                onRemove = { viewModel.removeTile(explodedTile.id); viewModel.explodeTile(null) },
-                onRename = { folderToRename = explodedTile; viewModel.explodeTile(null) },
-                onMoveTile = { viewModel.setEditMode(true); viewModel.explodeTile(null) },
-                onAppSettings = { 
-                    try {
-                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                            data = Uri.fromParts("package", explodedTile.packageName, null)
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        }
-                        context.startActivity(intent)
-                    } catch (e: Exception) {}
-                    viewModel.explodeTile(null)
-                },
-                onClearNotifications = { 
-                    explodedTile.packageName?.let { viewModel.clearNotifications(it) }
-                    viewModel.explodeTile(null)
-                },
-                onShare = {
-                    try {
-                        val intent = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_TEXT, "Check out ${explodedTile.label}!")
-                        }
-                        context.startActivity(Intent.createChooser(intent, "Share"))
-                    } catch (e: Exception) {}
-                    viewModel.explodeTile(null)
-                },
-                onUninstall = {
-                    try {
-                        val intent = Intent(Intent.ACTION_DELETE).apply {
-                            data = Uri.fromParts("package", explodedTile.packageName, null)
-                        }
-                        context.startActivity(intent)
-                    } catch (e: Exception) {}
-                    viewModel.explodeTile(null)
-                },
-                shortcuts = shortcuts,
-                onShortcutClick = { viewModel.launchShortcut(it); viewModel.explodeTile(null) },
-                tileOpacity = tileOpacity
-            )
-        }
-
-        if (showNewFolderDialog) {
-            RenameFolderDialog(currentName = "New Folder", onDismiss = { showNewFolderDialog = false }, onRename = { newName -> viewModel.addEmptyFolder(newName); showNewFolderDialog = false })
-        }
-
-        if (folderToRename != null) {
-            RenameFolderDialog(currentName = folderToRename!!.label, onDismiss = { folderToRename = null }, onRename = { newName -> viewModel.renameFolder(folderToRename!!.id, newName); folderToRename = null })
         }
 
         val openFolder = tiles.find { it.id == openFolderId }
@@ -768,7 +724,7 @@ fun HomeScreen(
                         FluentSurface(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .wrapContentHeight()
+                                .heightIn(max = (configuration.screenHeightDp * 0.8).dp)
                                 .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(24.dp)),
                             shape = RoundedCornerShape(24.dp), 
                             alpha = 0.85f, 
@@ -779,100 +735,139 @@ fun HomeScreen(
                             Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.clickable { folderToRename = openFolder }
+                                    modifier = Modifier.clickable { 
+                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        folderToRename = openFolder 
+                                    }
                                 ) {
                                     Text(text = openFolder.label, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onSurface)
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Icon(Icons.Rounded.Edit, contentDescription = "Rename", modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
                                 }
                                 Spacer(modifier = Modifier.height(24.dp))
-                                LazyVerticalGrid(
-                                    columns = GridCells.Fixed(3), 
-                                    verticalArrangement = Arrangement.spacedBy(16.dp), 
-                                    horizontalArrangement = Arrangement.spacedBy(16.dp), 
-                                    modifier = Modifier.heightIn(max = 400.dp),
-                                    contentPadding = PaddingValues(bottom = 80.dp)
-                                ) {
-                                    itemsIndexed(openFolder.subTiles) { i, subTile ->
-                                        var itemVisible by remember { mutableStateOf(false) }
-                                        var subDragOffset by remember { mutableStateOf(Offset.Zero) }
-                                        var isSubDragging by remember { mutableStateOf(false) }
-                                        var subItemPosition by remember { mutableStateOf(Offset.Zero) }
-                                        var subItemSize by remember { mutableStateOf(IntSize.Zero) }
-                                        
-                                        LaunchedEffect(Unit) { delay(10L * i); itemVisible = true }
-                                        
-                                        AnimatedVisibility(
-                                            visible = itemVisible, 
-                                            enter = fadeIn(tween(150)) + scaleIn(initialScale = 0.1f, animationSpec = tween(150), transformOrigin = androidx.compose.ui.graphics.TransformOrigin.Center) + expandIn(expandFrom = Alignment.Center, animationSpec = tween(150))
-                                        ) {
-                                            HomeTileItem(
-                                                tile = subTile, 
-                                                tileOpacity = tileOpacity, 
-                                                modifier = Modifier
-                                                    .onGloballyPositioned { coords ->
-                                                        subItemPosition = coords.positionInRoot()
-                                                        subItemSize = coords.size
-                                                    }
-                                                    .zIndex(if (isSubDragging) 100f else 1f)
-                                                    .graphicsLayer {
-                                                        translationX = subDragOffset.x
-                                                        translationY = subDragOffset.y
-                                                        val scale = if (isSubDragging) 1.2f else 1f
-                                                        scaleX = scale
-                                                        scaleY = scale
-                                                    }
-                                                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { 
-                                                        if (!isSubDragging) {
-                                                            if (subTile.packageName != null) {
-                                                                onAppClick(subTile.packageName)
-                                                                viewModel.openFolder(null)
-                                                            }
+                                Box(modifier = Modifier.weight(1f, fill = false)) {
+                                    LazyVerticalGrid(
+                                        columns = GridCells.Fixed(3), 
+                                        verticalArrangement = Arrangement.spacedBy(24.dp), 
+                                        horizontalArrangement = Arrangement.spacedBy(24.dp), 
+                                        modifier = Modifier.fillMaxWidth(),
+                                        contentPadding = PaddingValues(bottom = 80.dp)
+                                    ) {
+                                        itemsIndexed(openFolder.subTiles) { i, subTile ->
+                                            var itemVisible by remember { mutableStateOf(false) }
+                                            var subDragOffset by remember { mutableStateOf(Offset.Zero) }
+                                            var isSubDragging by remember { mutableStateOf(false) }
+                                            var subItemPosition by remember { mutableStateOf(Offset.Zero) }
+                                            var subItemSize by remember { mutableStateOf(IntSize.Zero) }
+                                            
+                                            LaunchedEffect(Unit) { delay(10L * i); itemVisible = true }
+                                            
+                                            androidx.compose.animation.AnimatedVisibility(
+                                                visible = itemVisible, 
+                                                enter = fadeIn(tween(150)) + scaleIn(initialScale = 0.1f, animationSpec = tween(150), transformOrigin = androidx.compose.ui.graphics.TransformOrigin.Center) + expandIn(expandFrom = Alignment.Center, animationSpec = tween(150))
+                                            ) {
+                                                HomeTileItem(
+                                                    tile = subTile, 
+                                                    tileOpacity = tileOpacity, 
+                                                    modifier = Modifier
+                                                        .onGloballyPositioned { coords ->
+                                                            subItemPosition = coords.positionInRoot()
+                                                            subItemSize = coords.size
                                                         }
-                                                    }
-                                                    .pointerInput(subTile.id) {
-                                                        detectDragGestures(
-                                                            onDragStart = { isSubDragging = true },
-                                                            onDragEnd = {
-                                                                isSubDragging = false
-                                                                subDragOffset = Offset.Zero
-                                                            },
-                                                            onDragCancel = {
-                                                                isSubDragging = false
-                                                                subDragOffset = Offset.Zero
-                                                            },
-                                                            onDrag = { change, dragAmount ->
-                                                                change.consume()
-                                                                subDragOffset += dragAmount
-                                                                
-                                                                val currentGlobalPosition = subItemPosition + subDragOffset
-                                                                
-                                                                if (subDragOffset.getDistance() > 350f) {
-                                                                    val handOffOffset = currentGlobalPosition
+                                                        .zIndex(if (isSubDragging) 100f else 1f)
+                                                        .graphicsLayer {
+                                                            translationX = subDragOffset.x
+                                                            translationY = subDragOffset.y
+                                                            val scale = if (isSubDragging) 1.2f else 1f
+                                                            scaleX = scale
+                                                            scaleY = scale
+                                                        }
+                                                        .pointerInput(subTile.id) {
+                                                            coroutineScope {
+                                                                awaitEachGesture {
+                                                                    val down = awaitFirstDown(pass = PointerEventPass.Initial)
+                                                                    var dragStarted = false
+                                                                    var hasMovedSignificant = false
+                                                                    val isHoldTriggered = BooleanArray(1) { false }
                                                                     
-                                                                    draggingTileId = subTile.id
-                                                                    draggingTileSize = subItemSize
-                                                                    dragStartPointerOffset = pointerPosition - handOffOffset
-                                                                    
-                                                                    val relativePointer = pointerPosition - gridPosition
-                                                                    val layoutInfo = gridState.layoutInfo
-                                                                    val targetItem = layoutInfo.visibleItemsInfo.minByOrNull { other ->
-                                                                        val centerX = other.offset.x + other.size.width / 2f
-                                                                        val centerY = other.offset.y + other.size.height / 2f
-                                                                        (relativePointer.x - centerX) * (relativePointer.x - centerX) +
-                                                                        (relativePointer.y - centerY) * (relativePointer.y - centerY)
+                                                                    val holdJob = launch {
+                                                                        delay(750)
+                                                                        if (!isSubDragging) {
+                                                                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                                            viewModel.explodeTile(subTile.id)
+                                                                            isHoldTriggered[0] = true
+                                                                        }
                                                                     }
-                                                                    val dropIndex = targetItem?.index ?: tiles.size
 
-                                                                    viewModel.removeTileFromFolder(openFolder.id, subTile.id, toIndex = dropIndex)
-                                                                    viewModel.openFolder(null)
-                                                                    viewModel.setEditMode(true)
-                                                                    isSubDragging = false
+                                                                    try {
+                                                                        while (true) {
+                                                                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                                                                            val pointer = event.changes.firstOrNull { it.id == down.id } ?: break
+                                                                            
+                                                                            val totalDrag = pointer.position - down.position
+                                                                            val isMoving = totalDrag.getDistance() > viewConfiguration.touchSlop
+                                                                            if (isMoving) hasMovedSignificant = true
+
+                                                                            if (pointer.pressed) {
+                                                                                if (isHoldTriggered[0] || isMoving) {
+                                                                                    pointer.consume()
+                                                                                    if (!dragStarted && isMoving) {
+                                                                                        dragStarted = true
+                                                                                        isSubDragging = true
+                                                                                        holdJob.cancel()
+                                                                                    }
+                                                                                    
+                                                                                    if (dragStarted) {
+                                                                                        subDragOffset += pointer.position - pointer.previousPosition
+                                                                                        
+                                                                                        val currentGlobalPosition = subItemPosition + subDragOffset
+                                                                                        if (subDragOffset.getDistance() > 350f) {
+                                                                                            // Extraction logic
+                                                                                            draggingTileId = subTile.id
+                                                                                            draggingTileSize = subItemSize
+                                                                                            dragStartPointerOffset = pointerPosition - currentGlobalPosition
+                                                                                            
+                                                                                            val relativePointer = pointerPosition - gridPosition
+                                                                                            val layoutInfo = gridState.layoutInfo
+                                                                                            val targetItem = layoutInfo.visibleItemsInfo.minByOrNull { other ->
+                                                                                                val centerX = other.offset.x + other.size.width / 2f
+                                                                                                val centerY = other.offset.y + other.size.height / 2f
+                                                                                                (relativePointer.x - centerX) * (relativePointer.x - centerX) +
+                                                                                                (relativePointer.y - centerY) * (relativePointer.y - centerY)
+                                                                                            }
+                                                                                            val dropIndex = targetItem?.index ?: tiles.size
+
+                                                                                            viewModel.removeTileFromFolder(openFolder.id, subTile.id, toIndex = dropIndex)
+                                                                                            viewModel.openFolder(null)
+                                                                                            viewModel.setEditMode(true)
+                                                                                            isSubDragging = false
+                                                                                            return@awaitEachGesture
+                                                                                        }
+                                                                                    }
+                                                                                }
+                                                                            } else {
+                                                                                // Up
+                                                                                holdJob.cancel()
+                                                                                if (!dragStarted && !isHoldTriggered[0] && !hasMovedSignificant) {
+                                                                                    // Click
+                                                                                    if (subTile.packageName != null) {
+                                                                                        onAppClick(subTile.packageName)
+                                                                                        viewModel.openFolder(null)
+                                                                                    }
+                                                                                }
+                                                                                isSubDragging = false
+                                                                                subDragOffset = Offset.Zero
+                                                                                break
+                                                                            }
+                                                                        }
+                                                                    } finally {
+                                                                        holdJob.cancel()
+                                                                    }
                                                                 }
                                                             }
-                                                        )
-                                                    }
-                                            )
+                                                        }
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -894,6 +889,94 @@ fun HomeScreen(
                     }
                 }
             }
+        }
+
+        val (explodedTile, isInsideFolder) = remember(explodedTileId, tiles) {
+            if (explodedTileId == null) null to false
+            else {
+                val mainTile = tiles.find { it.id == explodedTileId }
+                if (mainTile != null) mainTile to false
+                else {
+                    val subTile = tiles.flatMap { it.subTiles }.find { it.id == explodedTileId }
+                    subTile to (subTile != null)
+                }
+            }
+        }
+        if (explodedTile != null && draggingTileId == null) {
+            AdvancedFluentMenu(
+                label = explodedTile.label,
+                packageName = explodedTile.packageName,
+                onDismiss = { viewModel.explodeTile(null) },
+                isFromHome = !isInsideFolder,
+                tileSize = explodedTile.size,
+                onResize = { viewModel.resizeTile(explodedTile.id, it) },
+                onRemove = { viewModel.removeTile(explodedTile.id); viewModel.explodeTile(null) },
+                onRename = { folderToRename = explodedTile; viewModel.explodeTile(null) },
+                onMoveTile = { viewModel.setEditMode(true); viewModel.explodeTile(null) },
+                isFolder = explodedTile.isFolder,
+                specialType = explodedTile.specialType,
+                isWidget = explodedTile.isWidget,
+                notificationCount = explodedTile.notificationCount,
+                notificationSender = explodedTile.notificationSender,
+                notificationContent = explodedTile.notificationContent,
+                notificationSummary = explodedTile.notificationSummary,
+                notificationTime = explodedTile.notificationTime,
+                onClearNotifications = { 
+                    explodedTile.packageName?.let { viewModel.clearNotifications(it) }
+                    viewModel.explodeTile(null)
+                },
+                onAppSettings = { 
+                    try {
+                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = Uri.fromParts("package", explodedTile.packageName, null)
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        context.startActivity(intent)
+                    } catch (e: Exception) {}
+                    viewModel.explodeTile(null)
+                },
+                onUninstall = {
+                    try {
+                        val intent = Intent(Intent.ACTION_DELETE).apply {
+                            data = Uri.fromParts("package", explodedTile.packageName, null)
+                        }
+                        context.startActivity(intent)
+                    } catch (e: Exception) {}
+                    viewModel.explodeTile(null)
+                },
+                onShare = {
+                    try {
+                        val intent = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_TEXT, "Check out ${explodedTile.label}!")
+                        }
+                        context.startActivity(Intent.createChooser(intent, "Share"))
+                    } catch (e: Exception) {}
+                    viewModel.explodeTile(null)
+                },
+                onCheckForUpdates = { /* Implement */ },
+                onRefreshTile = { /* Implement */ },
+                shortcuts = shortcuts,
+                onShortcutClick = { viewModel.launchShortcut(it); viewModel.explodeTile(null) },
+                tileOpacity = tileOpacity,
+                onAddToHome = { /* Already on home */ },
+                onPinToTaskbar = { /* Implement if needed */ },
+                onRateAndReview = {
+                    try {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=${explodedTile.packageName}")))
+                    } catch (e: Exception) {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=${explodedTile.packageName}")))
+                    }
+                }
+            )
+        }
+
+        if (showNewFolderDialog) {
+            RenameFolderDialog(currentName = "New Folder", onDismiss = { showNewFolderDialog = false }, onRename = { newName -> viewModel.addEmptyFolder(newName); showNewFolderDialog = false })
+        }
+
+        if (folderToRename != null) {
+            RenameFolderDialog(currentName = folderToRename!!.label, onDismiss = { folderToRename = null }, onRename = { newName -> viewModel.renameFolder(folderToRename!!.id, newName); folderToRename = null })
         }
     }
 }
@@ -1061,17 +1144,6 @@ fun HomeTileItem(
                     Box(modifier = Modifier.matchParentSize().border(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f), RoundedCornerShape(12.dp)).zIndex(15f))
                 }
             }
-        }
-    }
-}
-
-@Composable
-fun ActionButton(text: String, icon: ImageVector, onClick: () -> Unit, modifier: Modifier = Modifier, contentColor: Color = MaterialTheme.colorScheme.onSurface) {
-    TextButton(onClick = onClick, modifier = modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.textButtonColors(contentColor = contentColor)) {
-        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp))
-            Spacer(modifier = Modifier.width(16.dp))
-            Text(text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         }
     }
 }

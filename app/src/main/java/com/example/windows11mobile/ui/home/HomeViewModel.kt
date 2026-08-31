@@ -464,11 +464,22 @@ class HomeViewModel(
     fun removeTile(id: String) {
         android.util.Log.d("HomeViewModel", "Removing tile: $id")
         val currentList = _rawTiles.value
-        val tile = currentList.find { it.id == id }
+        
+        // Find in main list or subfolders
+        val tile = currentList.find { it.id == id } ?: currentList.flatMap { it.subTiles }.find { it.id == id }
+        
         if (tile?.isWidget == true && tile.widgetId != null) {
             appWidgetHost.deleteAppWidgetId(tile.widgetId)
         }
-        val newList = currentList.filter { it.id != id }
+        
+        // Recursive removal
+        val newList = currentList.filter { it.id != id }.map { 
+            if (it.isFolder) {
+                val updatedSubTiles = it.subTiles.filter { sub -> sub.id != id }
+                it.copy(subTiles = updatedSubTiles)
+            } else it
+        }.filter { !it.isFolder || it.subTiles.isNotEmpty() } // Clean up empty folders if any
+        
         _rawTiles.value = newList
         _explodedTileId.value = null
         saveTiles()

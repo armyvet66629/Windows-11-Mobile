@@ -58,17 +58,83 @@ fun AdvancedFluentMenu(
     modifier: Modifier = Modifier,
     tileOpacity: Float = 0.45f
 ) {
+    AdvancedFluentMenu(
+        label = tile.label,
+        packageName = tile.packageName,
+        onDismiss = onDismiss,
+        isFromHome = true,
+        tileSize = tile.size,
+        onResize = onResize,
+        onRemove = onRemove,
+        onMoveTile = onMoveTile,
+        onRename = onRename,
+        isFolder = tile.isFolder,
+        specialType = tile.specialType,
+        isWidget = tile.isWidget,
+        notificationCount = tile.notificationCount,
+        notificationSender = tile.notificationSender,
+        notificationContent = tile.notificationContent,
+        notificationSummary = tile.notificationSummary,
+        notificationTime = tile.notificationTime,
+        onClearNotifications = onClearNotifications,
+        onAppSettings = onAppSettings,
+        onUninstall = onUninstall,
+        onShare = onShare,
+        onCheckForUpdates = onCheckForUpdates,
+        onRefreshTile = onRefreshTile,
+        shortcuts = shortcuts,
+        onShortcutClick = onShortcutClick,
+        modifier = modifier,
+        tileOpacity = tileOpacity
+    )
+}
+
+@Composable
+fun AdvancedFluentMenu(
+    label: String,
+    packageName: String?,
+    icon: Any? = null,
+    onDismiss: () -> Unit,
+    isFromHome: Boolean = true,
+    tileSize: TileSize = TileSize.MEDIUM,
+    onResize: (TileSize) -> Unit = {},
+    onRemove: () -> Unit = {},
+    onMoveTile: () -> Unit = {},
+    onRename: () -> Unit = {},
+    isFolder: Boolean = false,
+    specialType: String? = null,
+    isWidget: Boolean = false,
+    onAddToHome: () -> Unit = {},
+    onPinToTaskbar: () -> Unit = {},
+    onRateAndReview: () -> Unit = {},
+    notificationCount: Int = 0,
+    notificationSender: String? = null,
+    notificationContent: String? = null,
+    notificationSummary: String? = null,
+    notificationTime: Long? = null,
+    onClearNotifications: () -> Unit = {},
+    onAppSettings: () -> Unit,
+    onUninstall: () -> Unit = {},
+    onShare: () -> Unit = {},
+    onCheckForUpdates: () -> Unit = {},
+    onRefreshTile: () -> Unit = {},
+    shortcuts: List<ShortcutInfo> = emptyList(),
+    onShortcutClick: (ShortcutInfo) -> Unit = {},
+    modifier: Modifier = Modifier,
+    tileOpacity: Float = 0.45f
+) {
     val context = LocalContext.current
-    val appIcon = remember(tile.packageName) {
-        tile.packageName?.let { pkg ->
+    val appIcon = remember(packageName, icon) {
+        if (icon != null) icon
+        else packageName?.let { pkg ->
             try { context.packageManager.getApplicationIcon(pkg) } catch (_: Exception) { null }
         }
     }
 
     FluentContextMenu(
         isVisible = true,
-        title = tile.label,
-        subtitle = tile.packageName ?: "App Widget",
+        title = label,
+        subtitle = packageName ?: (if (isWidget) "App Widget" else ""),
         icon = appIcon,
         onDismiss = onDismiss
     ) {
@@ -79,21 +145,32 @@ fun AdvancedFluentMenu(
                 .padding(bottom = 20.dp),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            QuickActionButton(
-                icon = Icons.Rounded.Delete,
-                contentDescription = "Remove",
-                tint = MaterialTheme.colorScheme.error,
-                onClick = {
-                    onRemove()
-                    onDismiss()
-                }
-            )
+            if (isFromHome) {
+                QuickActionButton(
+                    icon = Icons.Rounded.Delete,
+                    contentDescription = "Remove",
+                    tint = MaterialTheme.colorScheme.error,
+                    onClick = {
+                        onRemove()
+                        onDismiss()
+                    }
+                )
+            } else {
+                QuickActionButton(
+                    icon = FluentIcons.Home,
+                    contentDescription = "Add to Home",
+                    onClick = {
+                        onAddToHome()
+                        onDismiss()
+                    }
+                )
+            }
             QuickActionButton(
                 icon = FluentIcons.Share,
                 contentDescription = "Share",
                 onClick = onShare
             )
-            if (!tile.isWidget && tile.specialType == null) {
+            if (!isWidget && specialType == null) {
                 QuickActionButton(
                     icon = FluentIcons.Uninstall,
                     contentDescription = "Uninstall",
@@ -108,7 +185,7 @@ fun AdvancedFluentMenu(
         }
 
         // Notification Section
-        if (tile.notificationCount > 0) {
+        if (notificationCount > 0) {
             FluentSurface(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -126,16 +203,16 @@ fun AdvancedFluentMenu(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = tile.notificationSender ?: "Notification",
+                            text = notificationSender ?: "Notification",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            val timeStr = remember(tile.notificationTime) {
-                                if (tile.notificationTime != null && tile.notificationTime > 0) {
+                            val timeStr = remember(notificationTime) {
+                                if (notificationTime != null && notificationTime > 0) {
                                     val sdf = SimpleDateFormat("h:mm a", Locale.getDefault())
-                                    sdf.format(Date(tile.notificationTime))
+                                    sdf.format(Date(notificationTime))
                                 } else ""
                             }
                             Text(
@@ -159,7 +236,7 @@ fun AdvancedFluentMenu(
                     }
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = tile.notificationContent ?: tile.notificationSummary ?: "",
+                        text = notificationContent ?: notificationSummary ?: "",
                         style = MaterialTheme.typography.bodyMedium,
                         maxLines = 4,
                         overflow = TextOverflow.Ellipsis,
@@ -170,9 +247,9 @@ fun AdvancedFluentMenu(
         }
 
         // Category-Specific Actions
-        val pkg = tile.packageName?.lowercase() ?: ""
+        val pkg = packageName?.lowercase() ?: ""
         when {
-            tile.specialType == HomeTile.TYPE_WEATHER || tile.specialType == HomeTile.TYPE_CLOCK_WEATHER -> {
+            specialType == HomeTile.TYPE_WEATHER || specialType == HomeTile.TYPE_CLOCK_WEATHER -> {
                 ActionButton(
                     text = "Change Location",
                     icon = FluentIcons.Search,
@@ -187,7 +264,7 @@ fun AdvancedFluentMenu(
                 Spacer(modifier = Modifier.height(10.dp))
                 HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.1f))
             }
-            tile.specialType == HomeTile.TYPE_PHOTOS -> {
+            specialType == HomeTile.TYPE_PHOTOS -> {
                 ActionButton(
                     text = "Choose Albums",
                     icon = FluentIcons.Photos,
@@ -323,38 +400,34 @@ fun AdvancedFluentMenu(
             }
         }
 
-        // Resize Quick Actions
-        Text(
-            text = "RESIZE MODE",
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.SemiBold,
-            letterSpacing = 1.5.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-            modifier = Modifier.padding(bottom = 12.dp)
-        )
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 24.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            ResizeButton(TileSize.SMALL, currentSize = tile.size, modifier = Modifier.weight(1f), onClick = { onResize(TileSize.SMALL) })
-            ResizeButton(TileSize.MEDIUM, currentSize = tile.size, modifier = Modifier.weight(1f), onClick = { onResize(TileSize.MEDIUM) })
-            ResizeButton(TileSize.WIDE, currentSize = tile.size, modifier = Modifier.weight(1f), onClick = { onResize(TileSize.WIDE) })
-            ResizeButton(TileSize.LARGE, currentSize = tile.size, modifier = Modifier.weight(1f), onClick = { onResize(TileSize.LARGE) })
-        }
-
-        HorizontalDivider(modifier = Modifier.padding(bottom = 16.dp), color = Color.White.copy(alpha = 0.1f))
-
-        // Standard App Actions
-        if (!tile.isWidget && tile.specialType == null) {
-            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.1f))
+        if (isFromHome) {
+            // Resize Quick Actions
+            Text(
+                text = "RESIZE MODE",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 1.5.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                modifier = Modifier.padding(bottom = 12.dp)
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 24.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                ResizeButton(TileSize.SMALL, currentSize = tileSize, modifier = Modifier.weight(1f), onClick = { onResize(TileSize.SMALL) })
+                ResizeButton(TileSize.MEDIUM, currentSize = tileSize, modifier = Modifier.weight(1f), onClick = { onResize(TileSize.MEDIUM) })
+                ResizeButton(TileSize.WIDE, currentSize = tileSize, modifier = Modifier.weight(1f), onClick = { onResize(TileSize.WIDE) })
+                ResizeButton(TileSize.LARGE, currentSize = tileSize, modifier = Modifier.weight(1f), onClick = { onResize(TileSize.LARGE) })
+            }
+            HorizontalDivider(modifier = Modifier.padding(bottom = 16.dp), color = Color.White.copy(alpha = 0.1f))
         }
 
         // Shortcuts Section
         if (shortcuts.isNotEmpty()) {
-            val shortcutSectionTitle = remember(tile.packageName) {
-                val pkgName = tile.packageName?.lowercase() ?: ""
+            val shortcutSectionTitle = remember(packageName) {
+                val pkgName = packageName?.lowercase() ?: ""
                 when {
                     pkgName.contains("dialer") || pkgName.contains("phone") -> "FREQUENT CONTACTS"
                     pkgName.contains("messaging") || pkgName.contains("message") || pkgName.contains("sms") || pkgName.contains("whatsapp") || pkgName.contains("telegram") -> "RECENT CONVERSATIONS"
@@ -376,7 +449,7 @@ fun AdvancedFluentMenu(
             )
             
             shortcuts.forEach { shortcut ->
-                val label = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N_MR1) {
+                val labelText = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N_MR1) {
                     shortcut.shortLabel ?: shortcut.longLabel ?: "Shortcut"
                 } else {
                     "Shortcut"
@@ -394,7 +467,7 @@ fun AdvancedFluentMenu(
                 }
 
                 ActionButton(
-                    text = label.toString(),
+                    text = labelText.toString(),
                     icon = shortcutIcon ?: Icons.AutoMirrored.Rounded.Launch,
                     onClick = { 
                         onShortcutClick(shortcut)
@@ -407,12 +480,52 @@ fun AdvancedFluentMenu(
         }
 
         // Action Buttons
-        if (tile.isFolder) {
+        if (isFromHome) {
+            if (isFolder) {
+                ActionButton(
+                    text = "Rename folder",
+                    icon = Icons.Rounded.Edit,
+                    onClick = {
+                        onRename()
+                        onDismiss()
+                    }
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+            }
+
             ActionButton(
-                text = "Rename folder",
-                icon = Icons.Rounded.Edit,
+                text = "Move Tile",
+                icon = FluentIcons.Open,
                 onClick = {
-                    onRename()
+                    onMoveTile()
+                    onDismiss()
+                }
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+        } else {
+            ActionButton(
+                text = "Pin to Taskbar",
+                icon = FluentIcons.Pin,
+                onClick = {
+                    onPinToTaskbar()
+                    onDismiss()
+                }
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            ActionButton(
+                text = "Add to Home Screen",
+                icon = FluentIcons.Home,
+                onClick = {
+                    onAddToHome()
+                    onDismiss()
+                }
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            ActionButton(
+                text = "Rate & Review",
+                icon = FluentIcons.Star,
+                onClick = {
+                    onRateAndReview()
                     onDismiss()
                 }
             )
@@ -420,18 +533,12 @@ fun AdvancedFluentMenu(
         }
 
         ActionButton(
-            text = "Move Tile",
-            icon = FluentIcons.Open,
-            onClick = {
-                onMoveTile()
-                onDismiss()
-            }
-        )
-        Spacer(modifier = Modifier.height(10.dp))
-        ActionButton(
             text = "Check for Updates",
             icon = FluentIcons.Search,
-            onClick = onCheckForUpdates
+            onClick = {
+                onCheckForUpdates()
+                onDismiss()
+            }
         )
     }
 }
