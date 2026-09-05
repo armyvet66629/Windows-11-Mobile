@@ -3,6 +3,9 @@ package com.example.windows11mobile.ui.shell
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
@@ -50,6 +53,9 @@ import com.example.windows11mobile.ui.settings.SettingsScreen
 import com.example.windows11mobile.ui.settings.SettingsViewModel
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.windows11mobile.ui.settings.SettingsViewModelFactory
 import com.example.windows11mobile.ui.theme.rememberWallpaperColor
 import com.example.windows11mobile.ui.components.FluentSurface
@@ -72,16 +78,23 @@ fun MainShell(
     
     val application = context.applicationContext as android.app.Application
     val homeViewModel: HomeViewModel = viewModel(
-        factory = com.example.windows11mobile.ui.home.HomeViewModelFactory(settingsRepository, application)
+        factory = com.example.windows11mobile.ui.home.HomeViewModelFactory(settingsRepository, rssRepository, application)
     )
 
-    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    var isShellVisible by remember { mutableStateOf(false) }
+    val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner, homeViewModel) {
-        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_START) {
-                homeViewModel.startWidgetListening()
-            } else if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) {
-                homeViewModel.stopWidgetListening()
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> {
+                    homeViewModel.startWidgetListening()
+                    isShellVisible = true
+                }
+                Lifecycle.Event.ON_STOP -> {
+                    homeViewModel.stopWidgetListening()
+                    isShellVisible = false
+                }
+                else -> {}
             }
         }
         
@@ -118,7 +131,13 @@ fun MainShell(
         homeViewModel.homeButtonPressed.collect {
             val desktopIndex = visiblePages.indexOf("desktop")
             if (desktopIndex != -1 && pagerState.currentPage != desktopIndex) {
-                pagerState.animateScrollToPage(desktopIndex)
+                pagerState.animateScrollToPage(
+                    page = desktopIndex,
+                    animationSpec = tween(
+                        durationMillis = 600,
+                        easing = FastOutSlowInEasing
+                    )
+                )
             }
         }
     }
@@ -130,8 +149,25 @@ fun MainShell(
     
     val currentRoute = backStack.lastOrNull()
 
+    val shellAlpha by animateFloatAsState(
+        targetValue = if (isShellVisible) 1f else 0.8f,
+        animationSpec = tween(500, easing = FastOutSlowInEasing),
+        label = "shellAlpha"
+    )
+    val shellScale by animateFloatAsState(
+        targetValue = if (isShellVisible) 1f else 1.05f,
+        animationSpec = tween(500, easing = FastOutSlowInEasing),
+        label = "shellScale"
+    )
+
     Scaffold(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier
+            .fillMaxSize()
+            .graphicsLayer {
+                alpha = shellAlpha
+                scaleX = shellScale
+                scaleY = shellScale
+            },
         containerColor = Color.Transparent, // Ensure background shows through
         contentColor = MaterialTheme.colorScheme.onBackground,
         contentWindowInsets = WindowInsets(0.dp) // Disable automatic insets to allow content behind status bar

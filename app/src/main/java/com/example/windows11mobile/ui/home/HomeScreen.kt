@@ -120,6 +120,7 @@ fun HomeScreen(
     val contacts by viewModel.contacts.collectAsStateWithLifecycle()
     val availableWidgets by viewModel.availableWidgets.collectAsStateWithLifecycle()
     val topNews by viewModel.topNews.collectAsStateWithLifecycle()
+    val recentPhotos by viewModel.recentPhotos.collectAsStateWithLifecycle()
     val openFolderId by viewModel.openFolderId.collectAsStateWithLifecycle()
     val isEditModeState = rememberUpdatedState(isEditMode)
 
@@ -573,6 +574,7 @@ fun HomeScreen(
                             calendarEvents = calendarEvents,
                             contacts = contacts,
                             weatherAppPackage = weatherAppPackage,
+                            recentPhotos = recentPhotos,
                             pointerPosition = pointerPosition,
                             onResize = { viewModel.resizeTile(tile.id) },
                             onPlayPause = { viewModel.mediaPlayPause() },
@@ -664,6 +666,7 @@ fun HomeScreen(
                         calendarEvents = calendarEvents,
                         contacts = contacts,
                         weatherAppPackage = weatherAppPackage,
+                        recentPhotos = recentPhotos,
                         pointerPosition = pointerPosition,
                         onResize = { viewModel.resizeTile(tile.id) },
                         onPlayPause = { viewModel.mediaPlayPause() },
@@ -768,7 +771,8 @@ fun HomeScreen(
                                             ) {
                                                 HomeTileItem(
                                                     tile = subTile, 
-                                                    tileOpacity = tileOpacity, 
+                                                    tileOpacity = tileOpacity,
+                                                    recentPhotos = recentPhotos,
                                                     modifier = Modifier
                                                         .onGloballyPositioned { coords ->
                                                             subItemPosition = coords.positionInRoot()
@@ -936,12 +940,29 @@ fun HomeScreen(
                     viewModel.explodeTile(null)
                 },
                 onUninstall = {
-                    try {
-                        val intent = Intent(Intent.ACTION_DELETE).apply {
-                            data = Uri.fromParts("package", explodedTile.packageName, null)
+                    val pkgName = explodedTile.packageName
+                    if (pkgName != null) {
+                        try {
+                            android.util.Log.d("Uninstall", "Triggering system uninstall for: $pkgName")
+                            val intent = Intent(Intent.ACTION_DELETE).apply {
+                                data = Uri.parse("package:$pkgName")
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            android.util.Log.e("Uninstall", "Standard uninstall failed, trying fallback", e)
+                            try {
+                                val fallback = Intent(Intent.ACTION_VIEW).apply {
+                                    data = Uri.parse("market://details?id=$pkgName")
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                context.startActivity(fallback)
+                                android.widget.Toast.makeText(context, "Please uninstall from the Play Store page", android.widget.Toast.LENGTH_LONG).show()
+                            } catch (e2: Exception) {
+                                android.widget.Toast.makeText(context, "Uninstallation not supported on this device", android.widget.Toast.LENGTH_SHORT).show()
+                            }
                         }
-                        context.startActivity(intent)
-                    } catch (e: Exception) {}
+                    }
                     viewModel.explodeTile(null)
                 },
                 onShare = {
@@ -954,7 +975,22 @@ fun HomeScreen(
                     } catch (e: Exception) {}
                     viewModel.explodeTile(null)
                 },
-                onCheckForUpdates = { /* Implement */ },
+                onCheckForUpdates = {
+                    try {
+                        val intent = Intent("com.google.android.finsky.VIEW_MY_DOWNLOADS").apply {
+                            setPackage("com.android.vending")
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        context.startActivity(intent)
+                    } catch (e: Exception) {
+                        try {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=com.android.vending"))
+                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            context.startActivity(intent)
+                        } catch (e2: Exception) {}
+                    }
+                    viewModel.explodeTile(null)
+                },
                 onRefreshTile = { /* Implement */ },
                 shortcuts = shortcuts,
                 onShortcutClick = { viewModel.launchShortcut(it); viewModel.explodeTile(null) },
@@ -994,6 +1030,7 @@ fun HomeTileItem(
     calendarEvents: List<com.example.windows11mobile.data.CalendarEvent> = emptyList(),
     contacts: List<com.example.windows11mobile.data.Contact> = emptyList(),
     weatherAppPackage: String? = null,
+    recentPhotos: List<android.net.Uri> = emptyList(),
     pointerPosition: Offset = Offset.Zero,
     onResize: () -> Unit = {},
     onPlayPause: () -> Unit = {},
@@ -1036,8 +1073,46 @@ fun HomeTileItem(
                 Spacer(modifier = Modifier.aspectRatio(ratio))
             }
         } else if (tile.isWidget && tile.widgetId != null) {
-            Box(modifier = Modifier.aspectRatio(ratio).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))) {
-                WidgetHostItem(widgetId = tile.widgetId, sharedHost = widgetHost)
+            Box {
+                // No FluentSurface wrapping for widgets to remove the background/overlay
+                Box(
+                    modifier = Modifier.aspectRatio(ratio)
+                        .scale(if (isHovered) 1.1f else 1.0f)
+                        .clip(RoundedCornerShape(12.dp))
+                        .then(if (isHovered) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp)) else Modifier)
+                ) {
+                    WidgetHostItem(widgetId = tile.widgetId, sharedHost = widgetHost, size = tile.size)
+                }
+                
+                if (isEditMode) {
+                    Box(modifier = Modifier.matchParentSize().zIndex(20f), contentAlignment = Alignment.BottomEnd) {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null
+                                ) { onResize() },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.9f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = FluentIcons.Open,
+                                    contentDescription = "Resize",
+                                    modifier = Modifier.size(20.dp).graphicsLayer(rotationZ = 90f),
+                                    tint = MaterialTheme.colorScheme.onPrimary
+                                )
+                            }
+                        }
+                    }
+                    Box(modifier = Modifier.matchParentSize().border(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f), RoundedCornerShape(12.dp)).zIndex(15f))
+                }
             }
         } else {
             Box {
@@ -1061,12 +1136,12 @@ fun HomeTileItem(
                                 front = { ClockWeatherTileContent(tile = tile, weatherData = weatherData, onWeatherClick = { if (weatherAppPackage == "web") context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=weather"))) else context.packageManager.getLaunchIntentForPackage(weatherAppPackage ?: "")?.let { context.startActivity(it) } }) },
                                 back = { WeatherForecastBack(weatherData = weatherData) }
                             )
-                            tile.specialType == HomeTile.TYPE_CLOCK -> ClockTileContent(tile)
-                            tile.specialType == HomeTile.TYPE_WEATHER -> WeatherTileContent(tile = tile, weatherData = weatherData, onWeatherClick = { if (weatherAppPackage == "web") context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=weather"))) else context.packageManager.getLaunchIntentForPackage(weatherAppPackage ?: "")?.let { context.startActivity(it) } })
-                            tile.specialType == HomeTile.TYPE_PHOTOS -> PhotoLiveTile(tile)
-                            tile.specialType == HomeTile.TYPE_MUSIC -> { val isPlaying = currentMedia?.isPlaying == true; FlippingTileContainer(isLive = currentMedia?.title != null, forceBack = isPlaying, front = { StandardTileContent(tile, icon) }, back = { MusicLiveTile(tile = tile, media = currentMedia, onPlayPause = onPlayPause, onSkipNext = onSkipNext, onSkipPrevious = onSkipPrevious) }) }
-                            tile.packageName?.lowercase()?.contains("calendar") == true || tile.specialType == "calendar" -> FlippingTileContainer(isLive = calendarEvents.isNotEmpty(), front = { StandardTileContent(tile, icon) }, back = { com.example.windows11mobile.ui.widgets.CalendarWidget(calendarEvents) })
-                            tile.packageName?.lowercase()?.contains("people") == true || tile.packageName?.lowercase()?.contains("contacts") == true -> FlippingTileContainer(isLive = contacts.isNotEmpty(), front = { StandardTileContent(tile, icon) }, back = { PeopleTileBack(contacts) })
+                            tile.specialType == HomeTile.TYPE_CLOCK || tile.packageName?.lowercase()?.contains("clock") == true -> ClockTileContent(tile)
+                            tile.specialType == HomeTile.TYPE_WEATHER || tile.packageName?.lowercase()?.contains("weather") == true -> WeatherTileContent(tile = tile, weatherData = weatherData, onWeatherClick = { if (weatherAppPackage == "web") context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=weather"))) else context.packageManager.getLaunchIntentForPackage(weatherAppPackage ?: "")?.let { context.startActivity(it) } })
+                            tile.specialType == HomeTile.TYPE_PHOTOS || tile.packageName?.lowercase()?.contains("photos") == true || tile.packageName?.lowercase()?.contains("gallery") == true -> PhotoLiveTile(tile, recentPhotos)
+                            tile.specialType == HomeTile.TYPE_MUSIC || (isMusicApp(tile.packageName) && currentMedia?.packageName == tile.packageName) -> { val isPlaying = currentMedia?.isPlaying == true; FlippingTileContainer(isLive = currentMedia?.title != null, forceBack = isPlaying, front = { StandardTileContent(tile, icon) }, back = { MusicLiveTile(tile = tile, media = currentMedia, onPlayPause = onPlayPause, onSkipNext = onSkipNext, onSkipPrevious = onSkipPrevious) }) }
+                            tile.packageName?.lowercase()?.contains("calendar") == true || tile.specialType == "calendar" -> FlippingTileContainer(isLive = true, front = { StandardTileContent(tile, icon) }, back = { com.example.windows11mobile.ui.widgets.CalendarWidget(calendarEvents) })
+                            tile.packageName?.lowercase()?.contains("people") == true || tile.packageName?.lowercase()?.contains("contacts") == true -> FlippingTileContainer(isLive = true, front = { StandardTileContent(tile, icon) }, back = { PeopleTileBack(contacts) })
                             tile.specialType == HomeTile.TYPE_SETTINGS -> SettingsLiveTile(tile)
                             tile.packageName?.lowercase()?.contains("youtube") == true && (tile.size == TileSize.WIDE || tile.size == TileSize.LARGE) -> {
                                 val isPlaying = currentMedia?.packageName?.contains("youtube") == true && currentMedia?.isPlaying == true
@@ -1159,7 +1234,7 @@ fun isMusicApp(packageName: String?): Boolean {
 }
 
 @Composable
-fun WidgetHostItem(widgetId: Int, sharedHost: android.appwidget.AppWidgetHost? = null) {
+fun WidgetHostItem(widgetId: Int, sharedHost: android.appwidget.AppWidgetHost? = null, size: TileSize = TileSize.MEDIUM) {
     val context = LocalContext.current
     val appWidgetManager = remember { AppWidgetManager.getInstance(context) }
     val appWidgetHost = sharedHost ?: remember { android.appwidget.AppWidgetHost(context, 1024) }
@@ -1175,18 +1250,32 @@ fun WidgetHostItem(widgetId: Int, sharedHost: android.appwidget.AppWidgetHost? =
     if (appWidgetInfo != null) { 
         key(widgetId) { 
             AndroidView(
-                modifier = Modifier.fillMaxSize().padding(8.dp), 
+                modifier = Modifier.fillMaxSize(), 
                 factory = { ctx -> 
                     try {
                         appWidgetHost.createView(ctx, widgetId, appWidgetInfo).apply { 
                             setAppWidget(widgetId, appWidgetInfo) 
+                            setPadding(0, 0, 0, 0)
                         } 
                     } catch (e: Exception) {
                         android.util.Log.e("WidgetHostItem", "Error creating widget view", e)
                         android.appwidget.AppWidgetHostView(ctx) // Fallback empty view
                     }
                 }, 
-                update = { view -> }
+                update = { view -> 
+                    // Update widget size bundle for better scaling
+                    val density = context.resources.displayMetrics.density
+                    val width = (size.spanX * 100).coerceAtLeast(100) // Rough DP conversion
+                    val height = (size.spanY * 100).coerceAtLeast(100)
+                    
+                    val options = android.os.Bundle().apply {
+                        putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, width)
+                        putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, height)
+                        putInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, width * 2)
+                        putInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, height * 2)
+                    }
+                    appWidgetManager.updateAppWidgetOptions(widgetId, options)
+                }
             ) 
         } 
     } else { 
@@ -1207,4 +1296,13 @@ fun RenameFolderDialog(currentName: String, onDismiss: () -> Unit, onRename: (St
 
 @androidx.compose.ui.tooling.preview.Preview(showBackground = true, widthDp = 400, heightDp = 800)
 @Composable
-fun HomeScreenPreview() { val context = LocalContext.current; val application = context.applicationContext as android.app.Application; val settingsRepository = remember { com.example.windows11mobile.data.RealSettingsRepository(context) }; val viewModel = remember { HomeViewModel(settingsRepository, application) }; com.example.windows11mobile.ui.theme.Windows11MobileTheme { HomeScreen(viewModel = viewModel, onAppClick = {}) } }
+fun HomeScreenPreview() { 
+    val context = LocalContext.current
+    val application = context.applicationContext as android.app.Application
+    val settingsRepository = remember { com.example.windows11mobile.data.RealSettingsRepository(context) }
+    val rssRepository = remember { com.example.windows11mobile.data.RssRepository() }
+    val viewModel = remember { HomeViewModel(settingsRepository, rssRepository, application) }
+    com.example.windows11mobile.ui.theme.Windows11MobileTheme { 
+        HomeScreen(viewModel = viewModel, onAppClick = {}) 
+    } 
+}

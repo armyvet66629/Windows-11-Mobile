@@ -46,12 +46,10 @@ class AppDrawerViewModel(
     )
 
     init {
-        loadApps()
-    }
-
-    private fun loadApps() {
         viewModelScope.launch {
-            _allApps.value = repository.getInstalledApps()
+            repository.observeApps().collect { apps ->
+                _allApps.value = apps
+            }
         }
     }
 

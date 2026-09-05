@@ -8,12 +8,15 @@ import android.os.Looper
 import android.provider.CallLog
 import android.provider.ContactsContract
 import android.provider.Telephony
+import androidx.core.content.ContextCompat
+import android.content.pm.PackageManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.UUID
 
 data class Contact(
     val id: String,
@@ -45,9 +48,17 @@ class ContactsRepository private constructor(private val context: Context) {
     private val _recentActivity = MutableStateFlow<List<RecentActivity>>(emptyList())
     val recentActivity: StateFlow<List<RecentActivity>> = _recentActivity
 
+    private val _lastSyncTime = MutableStateFlow(0L)
+    val lastSyncTime: StateFlow<Long> = _lastSyncTime
+
     private val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
         override fun onChange(selfChange: Boolean) {
             android.util.Log.d("ContactsRepository", "ContentObserver: Change detected")
+            // Try to show a toast for debug
+            try {
+                android.widget.Toast.makeText(context, "System Activity Detected", android.widget.Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {}
+            
             CoroutineScope(Dispatchers.IO).launch {
                 updateRecentActivity()
             }
@@ -55,17 +66,18 @@ class ContactsRepository private constructor(private val context: Context) {
     }
 
     init {
-        registerObservers()
         // Immediate first update
         CoroutineScope(Dispatchers.IO).launch {
             updateRecentActivity()
             updateContacts()
         }
         
+        registerObservers()
+
         // Fail-safe background refresh for phones that block observers
         CoroutineScope(Dispatchers.IO).launch {
             while(true) {
-                kotlinx.coroutines.delay(60000) // Every minute
+                kotlinx.coroutines.delay(30000) // Every 30 seconds
                 updateRecentActivity()
             }
         }
@@ -73,10 +85,13 @@ class ContactsRepository private constructor(private val context: Context) {
 
     fun registerObservers() {
         try {
+            android.util.Log.d("ContactsRepository", "Registering observers...")
             context.contentResolver.unregisterContentObserver(observer)
             context.contentResolver.registerContentObserver(CallLog.Calls.CONTENT_URI, true, observer)
-            context.contentResolver.registerContentObserver(Uri.parse("content://mms-sms/"), true, observer)
-            android.util.Log.d("ContactsRepository", "Observers registered successfully (Calls + MMS/SMS)")
+            context.contentResolver.registerContentObserver(Uri.parse("content://sms"), true, observer)
+            context.contentResolver.registerContentObserver(Uri.parse("content://mms"), true, observer)
+            context.contentResolver.registerContentObserver(Telephony.MmsSms.CONTENT_URI, true, observer)
+            android.util.Log.d("ContactsRepository", "Observers registered successfully (Calls + SMS + MMS + MmsSms)")
         } catch (e: SecurityException) {
             android.util.Log.e("ContactsRepository", "SecurityException during observer registration", e)
         }
@@ -127,156 +142,212 @@ class ContactsRepository private constructor(private val context: Context) {
     }
 
     suspend fun updateRecentActivity() = withContext(Dispatchers.IO) {
-        android.util.Log.d("ContactsRepository", "RecentActivity: Update started")
+        android.util.Log.d("ContactsRepository", "RecentActivity: Update starting... [FORCE REFRESH TRIGGERED]")
+        
+        val hasCallLog = ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED
+        val hasSms = ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
+        
+        android.util.Log.d("ContactsRepository", "Permissions: CallLog=$hasCallLog, SMS=$hasSms")
+
+        if (!hasCallLog && !hasSms) {
+            android.util.Log.w("ContactsRepository", "RecentActivity: Missing permissions (CallLog=$hasCallLog, SMS=$hasSms)")
+            return@withContext
+        }
+
         val activityList = mutableListOf<RecentActivity>()
         
-        // 1. Fetch Calls
-        try {
-            val callProjection = arrayOf(
-                CallLog.Calls._ID,
-                CallLog.Calls.CACHED_NAME,
-                CallLog.Calls.NUMBER,
-                CallLog.Calls.TYPE,
-                CallLog.Calls.DATE,
-                CallLog.Calls.CACHED_PHOTO_URI
-            )
-            context.contentResolver.query(
-                CallLog.Calls.CONTENT_URI,
-                callProjection,
-                null,
-                null,
-                "${CallLog.Calls.DATE} DESC LIMIT 10"
-            )?.use { cursor ->
-                val idIdx = cursor.getColumnIndex(CallLog.Calls._ID)
-                val nameIdx = cursor.getColumnIndex(CallLog.Calls.CACHED_NAME)
-                val numberIdx = cursor.getColumnIndex(CallLog.Calls.NUMBER)
-                val typeIdx = cursor.getColumnIndex(CallLog.Calls.TYPE)
-                val dateIdx = cursor.getColumnIndex(CallLog.Calls.DATE)
-                val photoIdx = cursor.getColumnIndex(CallLog.Calls.CACHED_PHOTO_URI)
+        // 1. Calls
+        if (hasCallLog) {
+            try {
+                android.util.Log.d("ContactsRepository", "Querying CallLog...")
+                val callProjection = arrayOf(
+                    CallLog.Calls._ID,
+                    CallLog.Calls.CACHED_NAME,
+                    CallLog.Calls.NUMBER,
+                    CallLog.Calls.TYPE,
+                    CallLog.Calls.DATE,
+                    CallLog.Calls.CACHED_PHOTO_URI,
+                    CallLog.Calls.DURATION
+                )
+                
+                val callUris = listOf(
+                    CallLog.Calls.CONTENT_URI,
+                    Uri.parse("content://call_log/calls")
+                )
 
-                while (cursor.moveToNext()) {
-                    val number = cursor.getString(numberIdx) ?: ""
-                    val cachedName = cursor.getString(nameIdx)
-                    val cachedPhoto = cursor.getString(photoIdx)
-                    
-                    var finalName = cachedName
-                    var finalPhoto = cachedPhoto
-                    
-                    if (finalName == null || finalPhoto == null) {
-                        val resolved = getContactInfo(number)
-                        if (finalName == null) finalName = resolved.first ?: number
-                        if (finalPhoto == null) finalPhoto = resolved.second
-                    }
+                for (uri in callUris) {
+                    context.contentResolver.query(
+                        uri,
+                        callProjection,
+                        null,
+                        null,
+                        "${CallLog.Calls.DATE} DESC LIMIT 50"
+                    )?.use { cursor ->
+                        android.util.Log.d("ContactsRepository", "Found ${cursor.count} items in $uri")
+                        val idIdx = cursor.getColumnIndex(CallLog.Calls._ID)
+                        val nameIdx = cursor.getColumnIndex(CallLog.Calls.CACHED_NAME)
+                        val numberIdx = cursor.getColumnIndex(CallLog.Calls.NUMBER)
+                        val typeIdx = cursor.getColumnIndex(CallLog.Calls.TYPE)
+                        val dateIdx = cursor.getColumnIndex(CallLog.Calls.DATE)
+                        val photoIdx = cursor.getColumnIndex(CallLog.Calls.CACHED_PHOTO_URI)
+                        val durationIdx = cursor.getColumnIndex(CallLog.Calls.DURATION)
 
-                    val type = when (cursor.getInt(typeIdx)) {
-                        CallLog.Calls.INCOMING_TYPE -> "Incoming call"
-                        CallLog.Calls.OUTGOING_TYPE -> "Outgoing call"
-                        CallLog.Calls.MISSED_TYPE -> "Missed call"
-                        else -> "Call"
+                        while (cursor.moveToNext()) {
+                            val id = if (idIdx != -1) cursor.getString(idIdx) else UUID.randomUUID().toString()
+                            val number = if (numberIdx != -1) cursor.getString(numberIdx) else ""
+                            val cachedName = if (nameIdx != -1) cursor.getString(nameIdx) else null
+                            val cachedPhoto = if (photoIdx != -1) cursor.getString(photoIdx) else null
+                            
+                            var finalName = cachedName
+                            var finalPhoto = cachedPhoto
+                            
+                            if (finalName.isNullOrBlank() || finalPhoto == null) {
+                                val resolved = getContactInfo(number)
+                                if (finalName.isNullOrBlank()) finalName = resolved.first ?: number
+                                if (finalPhoto == null) finalPhoto = resolved.second
+                            }
+
+                            val callType = if (typeIdx != -1) cursor.getInt(typeIdx) else -1
+                            val duration = if (durationIdx != -1) cursor.getLong(durationIdx) else 0L
+                            
+                            val summaryText = when (callType) {
+                                CallLog.Calls.INCOMING_TYPE -> "Incoming (${formatDuration(duration)})"
+                                CallLog.Calls.OUTGOING_TYPE -> "Outgoing (${formatDuration(duration)})"
+                                CallLog.Calls.MISSED_TYPE -> "Missed call"
+                                else -> "Call"
+                            }
+
+                            activityList.add(RecentActivity(
+                                id = "call_$id",
+                                type = ActivityType.CALL,
+                                name = finalName,
+                                summary = summaryText,
+                                timestamp = if (dateIdx != -1) cursor.getLong(dateIdx) else System.currentTimeMillis(),
+                                photoUri = finalPhoto,
+                                address = number
+                            ))
+                        }
                     }
-                    activityList.add(RecentActivity(
-                        id = "call_${cursor.getString(idIdx)}",
-                        type = ActivityType.CALL,
-                        name = finalName,
-                        summary = type,
-                        timestamp = cursor.getLong(dateIdx),
-                        photoUri = finalPhoto,
-                        data = null,
-                        address = number
-                    ))
                 }
+            } catch (e: Exception) {
+                android.util.Log.e("ContactsRepository", "Error fetching calls", e)
             }
-            android.util.Log.d("ContactsRepository", "RecentActivity: Found ${activityList.size} calls")
-        } catch (e: Exception) {
-            android.util.Log.e("ContactsRepository", "RecentActivity: Call error", e)
         }
 
-        // 2. Fetch SMS Messages
-        try {
-            val smsProjection = arrayOf(
-                Telephony.Sms._ID,
-                Telephony.Sms.ADDRESS,
-                Telephony.Sms.BODY,
-                Telephony.Sms.DATE,
-                Telephony.Sms.THREAD_ID
-            )
-            context.contentResolver.query(
+        // 2. SMS
+        if (hasSms) {
+            val smsUris = listOf(
                 Telephony.Sms.CONTENT_URI,
-                smsProjection,
-                null,
-                null,
-                "${Telephony.Sms.DATE} DESC LIMIT 10"
-            )?.use { cursor ->
-                val idIdx = cursor.getColumnIndex(Telephony.Sms._ID)
-                val addrIdx = cursor.getColumnIndex(Telephony.Sms.ADDRESS)
-                val bodyIdx = cursor.getColumnIndex(Telephony.Sms.BODY)
-                val dateIdx = cursor.getColumnIndex(Telephony.Sms.DATE)
-                val threadIdx = cursor.getColumnIndex(Telephony.Sms.THREAD_ID)
+                Telephony.Sms.Inbox.CONTENT_URI,
+                Telephony.Sms.Sent.CONTENT_URI
+            )
+            
+            for (uri in smsUris) {
+                try {
+                    android.util.Log.d("ContactsRepository", "Querying SMS URI: $uri")
+                    val smsProjection = arrayOf(
+                        Telephony.Sms._ID,
+                        Telephony.Sms.ADDRESS,
+                        Telephony.Sms.BODY,
+                        Telephony.Sms.DATE,
+                        Telephony.Sms.THREAD_ID
+                    )
+                    context.contentResolver.query(
+                        uri,
+                        smsProjection,
+                        null,
+                        null,
+                        "date DESC LIMIT 30"
+                    )?.use { cursor ->
+                        android.util.Log.d("ContactsRepository", "Found ${cursor.count} messages in $uri")
+                        val idIdx = cursor.getColumnIndex(Telephony.Sms._ID)
+                        val addrIdx = cursor.getColumnIndex(Telephony.Sms.ADDRESS)
+                        val bodyIdx = cursor.getColumnIndex(Telephony.Sms.BODY)
+                        val dateIdx = cursor.getColumnIndex(Telephony.Sms.DATE)
+                        val threadIdx = cursor.getColumnIndex(Telephony.Sms.THREAD_ID)
 
-                while (cursor.moveToNext()) {
-                    val address = cursor.getString(addrIdx) ?: ""
-                    val threadId = cursor.getString(threadIdx)
-                    val resolved = getContactInfo(address)
-                    
-                    activityList.add(RecentActivity(
-                        id = "sms_${cursor.getString(idIdx)}",
-                        type = ActivityType.MESSAGE,
-                        name = resolved.first ?: address,
-                        summary = cursor.getString(bodyIdx) ?: "",
-                        timestamp = cursor.getLong(dateIdx),
-                        photoUri = resolved.second,
-                        data = threadId,
-                        address = address
-                    ))
+                        while (cursor.moveToNext()) {
+                            val id = if (idIdx != -1) cursor.getString(idIdx) else UUID.randomUUID().toString()
+                            val address = if (addrIdx != -1) cursor.getString(addrIdx) else ""
+                            val resolved = getContactInfo(address)
+                            
+                            activityList.add(RecentActivity(
+                                id = "sms_$id",
+                                type = ActivityType.MESSAGE,
+                                name = resolved.first ?: address,
+                                summary = if (bodyIdx != -1) (cursor.getString(bodyIdx) ?: "New message") else "New message",
+                                timestamp = if (dateIdx != -1) cursor.getLong(dateIdx) else System.currentTimeMillis(),
+                                photoUri = resolved.second,
+                                data = if (threadIdx != -1) cursor.getString(threadIdx) else null,
+                                address = address
+                            ))
+                        }
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.w("ContactsRepository", "Error querying SMS URI: $uri", e)
                 }
             }
-        } catch (e: Exception) {
-            android.util.Log.e("ContactsRepository", "RecentActivity: SMS error", e)
+            
+            // 3. MMS
+            try {
+                android.util.Log.d("ContactsRepository", "Querying MMS...")
+                val mmsProjection = arrayOf("_id", "date", "thread_id")
+                context.contentResolver.query(
+                    Telephony.Mms.CONTENT_URI,
+                    mmsProjection,
+                    null,
+                    null,
+                    "date DESC LIMIT 30"
+                )?.use { cursor ->
+                    android.util.Log.d("ContactsRepository", "Found ${cursor.count} MMS")
+                    val idIdx = cursor.getColumnIndex("_id")
+                    val dateIdx = cursor.getColumnIndex("date")
+                    val threadIdx = cursor.getColumnIndex("thread_id")
+
+                    while (cursor.moveToNext()) {
+                        val id = if (idIdx != -1) cursor.getString(idIdx) else UUID.randomUUID().toString()
+                        val timestamp = if (dateIdx != -1) cursor.getLong(dateIdx) * 1000 else System.currentTimeMillis()
+                        val address = getMmsAddress(id)
+                        val resolved = getContactInfo(address ?: "")
+
+                        activityList.add(RecentActivity(
+                            id = "mms_$id",
+                            type = ActivityType.MESSAGE,
+                            name = resolved.first ?: address ?: "Multimedia Message",
+                            summary = "Multimedia message",
+                            timestamp = timestamp,
+                            photoUri = resolved.second,
+                            data = if (threadIdx != -1) cursor.getString(threadIdx) else null,
+                            address = address
+                        ))
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("ContactsRepository", "Error fetching MMS", e)
+            }
         }
 
-        // 3. Fetch MMS Messages (Modern texts are often MMS)
-        try {
-            val mmsProjection = arrayOf("_id", "date", "thread_id")
-            context.contentResolver.query(
-                Uri.parse("content://mms"),
-                mmsProjection,
-                null,
-                null,
-                "date DESC LIMIT 10"
-            )?.use { cursor ->
-                val idIdx = cursor.getColumnIndex("_id")
-                val dateIdx = cursor.getColumnIndex("date")
-                val threadIdx = cursor.getColumnIndex("thread_id")
-
-                while (cursor.moveToNext()) {
-                    val id = cursor.getString(idIdx)
-                    val threadId = cursor.getString(threadIdx)
-                    // MMS date is in seconds
-                    val timestamp = cursor.getLong(dateIdx) * 1000
-                    
-                    // Get address for MMS
-                    val address = getMmsAddress(id)
-                    val resolved = getContactInfo(address ?: "")
-
-                    activityList.add(RecentActivity(
-                        id = "mms_$id",
-                        type = ActivityType.MESSAGE,
-                        name = resolved.first ?: address ?: "MMS",
-                        summary = "Multimedia message",
-                        timestamp = timestamp,
-                        photoUri = resolved.second,
-                        data = threadId,
-                        address = address
-                    ))
+        // Final Sort and Dedup
+        val sorted = activityList
+            .distinctBy { 
+                if (it.type == ActivityType.MESSAGE) {
+                    "${it.address}_${it.summary}_${it.timestamp / 5000}" // Dedup messages by 5s window
+                } else {
+                    it.id
                 }
             }
-        } catch (e: Exception) {
-            android.util.Log.e("ContactsRepository", "RecentActivity: MMS error", e)
-        }
-
-        val sorted = activityList.sortedByDescending { it.timestamp }.take(20)
+            .sortedByDescending { it.timestamp }
+            .take(50)
+            
         _recentActivity.value = sorted
-        android.util.Log.d("ContactsRepository", "RecentActivity: Total items: ${sorted.size}")
+        _lastSyncTime.value = System.currentTimeMillis()
+        android.util.Log.d("ContactsRepository", "RecentActivity: Update complete. Final count: ${sorted.size} at ${_lastSyncTime.value}")
+    }
+
+    private fun formatDuration(seconds: Long): String {
+        val mins = seconds / 60
+        val secs = seconds % 60
+        return if (mins > 0) "${mins}m ${secs}s" else "${secs}s"
     }
 
     private fun getMmsAddress(mmsId: String): String? {

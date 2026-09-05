@@ -50,6 +50,7 @@ fun PeopleHubScreen(
     val context = LocalContext.current
     val contacts by viewModel.contacts.collectAsStateWithLifecycle()
     val recentActivity by viewModel.recentActivity.collectAsStateWithLifecycle()
+    val lastSyncTime by viewModel.lastSyncTime.collectAsStateWithLifecycle()
     val favorites = remember(contacts) { contacts.filter { it.isStarred } }
     
     // Permission launcher
@@ -63,14 +64,19 @@ fun PeopleHubScreen(
     }
 
     LaunchedEffect(Unit) {
-        val requiredPermissions = arrayOf(
+        val requiredPermissions = mutableListOf(
             android.Manifest.permission.READ_CONTACTS,
             android.Manifest.permission.READ_CALL_LOG,
             android.Manifest.permission.READ_SMS
         )
-        permissionLauncher.launch(requiredPermissions)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            requiredPermissions.add(android.Manifest.permission.READ_PHONE_STATE)
+        }
+        permissionLauncher.launch(requiredPermissions.toTypedArray())
         viewModel.refresh() // Manual refresh on entry
     }
+
+    var showDebug by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = modifier
@@ -92,7 +98,7 @@ fun PeopleHubScreen(
                 tintColor = Color.Black.copy(alpha = 0.25f),
                 luminosityAlpha = 0.2f
             ) {
-                Column(modifier = Modifier.padding(24.dp)) {
+                Column(modifier = Modifier.padding(24.dp).clickable { showDebug = !showDebug }) {
                     Text(
                         "People",
                         style = MaterialTheme.typography.displayLarge,
@@ -107,6 +113,33 @@ fun PeopleHubScreen(
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(top = 4.dp)
                     )
+                }
+            }
+        }
+
+        if (showDebug) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("DEBUG INFO", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        Text("Recent Items: ${recentActivity.size}")
+                        Text("Contacts: ${contacts.size}")
+                        Text("Last Sync: ${if (lastSyncTime > 0) SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(lastSyncTime)) else "Never"}")
+                        Text("Call Log Permission: ${androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_CALL_LOG) == android.content.pm.PackageManager.PERMISSION_GRANTED}")
+                        Text("SMS Permission: ${androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_SMS) == android.content.pm.PackageManager.PERMISSION_GRANTED}")
+                        Button(
+                            onClick = { 
+                                viewModel.refresh()
+                                android.widget.Toast.makeText(context, "Refreshing Activity...", android.widget.Toast.LENGTH_SHORT).show()
+                            }, 
+                            modifier = Modifier.padding(top = 8.dp)
+                        ) {
+                            Text("Force Refresh")
+                        }
+                    }
                 }
             }
         }

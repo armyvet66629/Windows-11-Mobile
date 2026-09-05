@@ -19,12 +19,14 @@ import com.example.windows11mobile.data.TileSize
 import com.example.windows11mobile.data.WeatherRepository
 import com.example.windows11mobile.data.NewsArticle
 import com.example.windows11mobile.data.RealNewsRepository
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
@@ -38,6 +40,7 @@ import com.example.windows11mobile.services.WindowsNotificationListener
 
 class HomeViewModel(
     private val settingsRepository: SettingsRepository,
+    private val rssRepository: com.example.windows11mobile.data.RssRepository,
     application: Application
 ) : AndroidViewModel(application) {
     private val context = getApplication<Application>().applicationContext
@@ -51,17 +54,69 @@ class HomeViewModel(
     val calendarEvents = calendarRepository.events
 
     private val appRepository = com.example.windows11mobile.data.RealAppRepository(context)
-    val installedApps = flow {
-        emit(appRepository.getInstalledApps())
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    private val photosRepository = com.example.windows11mobile.data.PhotosRepository(context)
+    
+    val installedApps = appRepository.observeApps()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _photosTrigger = MutableStateFlow(0L)
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val recentPhotos = _photosTrigger.flatMapLatest {
+        flow {
+            while(true) {
+                val photos = photosRepository.getRecentPhotos(20)
+                android.util.Log.d("HomeViewModel", "RecentPhotos Flow: Found ${photos.size} photos at ${System.currentTimeMillis()}")
+                emit(photos)
+                delay(120000) // 2 mins
+            }
+        }
+    }.distinctUntilChanged()
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun refreshPhotos() {
+        _photosTrigger.value = System.currentTimeMillis()
+    }
     
     private val newsRepository = RealNewsRepository(null)
-    val topNews = flow {
-        while(true) {
-            emit(newsRepository.getTopHeadlines())
-            delay(3600000) // 1 hour
+    private val _newsTrigger = MutableStateFlow(0L)
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val topNews = combine(settingsRepository.rssFeeds, _newsTrigger) { feeds, _ -> feeds }
+    .flatMapLatest { urls ->
+        flow {
+            while(true) {
+                android.util.Log.d("HomeViewModel", "Refreshing topNews. RSS Feeds: ${urls.size}")
+                val newsApiArticles = try {
+                    newsRepository.getTopHeadlines()
+                } catch (e: Exception) {
+                    android.util.Log.e("HomeViewModel", "NewsAPI Error", e)
+                    emptyList()
+                }
+                
+                val rssArticles = try {
+                    rssRepository.fetchFeeds(urls)
+                } catch (e: Exception) {
+                    android.util.Log.e("HomeViewModel", "RSS Fetch Error", e)
+                    emptyList()
+                }
+                
+                android.util.Log.d("HomeViewModel", "Fetched ${newsApiArticles.size} NewsAPI and ${rssArticles.size} RSS articles")
+                
+                val combined = (newsApiArticles + rssArticles).sortedByDescending { it.publishedAt }
+                val distinct = combined.distinctBy { it.url }
+                
+                if (distinct.isNotEmpty()) {
+                    android.util.Log.d("HomeViewModel", "Emitting ${distinct.size} distinct articles. Top article: ${distinct[0].title}")
+                }
+                
+                emit(distinct)
+                delay(1800000) // 30 mins
+            }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun refreshNews() {
+        _newsTrigger.value = System.currentTimeMillis()
+    }
 
     private val _homeButtonPressed = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val homeButtonPressed = _homeButtonPressed.asSharedFlow()
@@ -539,6 +594,11 @@ class HomeViewModel(
 
     fun onHomeButtonPressed() {
         _homeButtonPressed.tryEmit(Unit)
+        refreshPhotos()
+        refreshNews()
+        viewModelScope.launch {
+            contactsRepository.updateRecentActivity()
+        }
     }
 
     fun mediaPlayPause() {
@@ -572,12 +632,13 @@ class HomeViewModel(
 
 class HomeViewModelFactory(
     private val settingsRepository: SettingsRepository,
+    private val rssRepository: com.example.windows11mobile.data.RssRepository,
     private val application: Application
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(HomeViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            return HomeViewModel(settingsRepository, application) as T
+            return HomeViewModel(settingsRepository, rssRepository, application) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }

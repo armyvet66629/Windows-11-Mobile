@@ -1,5 +1,6 @@
 package com.example.windows11mobile.ui.settings
 
+import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -50,6 +51,21 @@ class SettingsViewModel(
 
     val statusBarMode: StateFlow<String> = repository.statusBarMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "auto")
+
+    val rssFeeds: StateFlow<Set<String>> = repository.rssFeeds
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
+
+    fun addRssFeed(url: String) {
+        viewModelScope.launch {
+            repository.addRssFeed(url)
+        }
+    }
+
+    fun removeRssFeed(url: String) {
+        viewModelScope.launch {
+            repository.removeRssFeed(url)
+        }
+    }
 
     private val _installedApps = MutableStateFlow<List<AppInfo>>(emptyList())
     val installedApps = _installedApps.asStateFlow()
@@ -130,6 +146,15 @@ class SettingsViewModel(
         viewModelScope.launch {
             repository.setStatusBarMode(mode)
         }
+    }
+
+    fun restartLauncher(context: android.content.Context) {
+        val packageManager = context.packageManager
+        val intent = packageManager.getLaunchIntentForPackage(context.packageName)
+        val componentName = intent?.component
+        val mainIntent = Intent.makeRestartActivityTask(componentName)
+        context.startActivity(mainIntent)
+        Runtime.getRuntime().exit(0)
     }
 }
 

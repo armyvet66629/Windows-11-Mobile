@@ -1,5 +1,6 @@
 package com.example.windows11mobile
 
+import android.app.Activity
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -21,12 +22,17 @@ import androidx.activity.result.contract.ActivityResultContracts
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Request location permissions for Weather
         // Request location permissions for Weather
         val requestPermissionLauncher = registerForActivityResult(
             ActivityResultContracts.RequestMultiplePermissions()
@@ -34,6 +40,22 @@ class MainActivity : ComponentActivity() {
             if (permissions.values.any { it }) {
                 // Re-register observers once permissions are granted
                 ContactsRepository.getInstance(this).registerObservers()
+                
+                // Force an immediate update now that we have permissions
+                CoroutineScope(Dispatchers.IO).launch {
+                    ContactsRepository.getInstance(this@MainActivity).updateRecentActivity()
+                    ContactsRepository.getInstance(this@MainActivity).updateContacts()
+                    // homeViewModel instance is needed here or we use the provider again
+                }
+                
+                // Use the provider to get the same instance and refresh photos
+                val settingsRepository = RealSettingsRepository(this)
+                val rssRepository = com.example.windows11mobile.data.RssRepository()
+                val homeViewModel = androidx.lifecycle.ViewModelProvider(
+                    this,
+                    com.example.windows11mobile.ui.home.HomeViewModelFactory(settingsRepository, rssRepository, application)
+                )[com.example.windows11mobile.ui.home.HomeViewModel::class.java]
+                homeViewModel.refreshPhotos()
             }
         }
 
@@ -43,11 +65,13 @@ class MainActivity : ComponentActivity() {
             Manifest.permission.READ_CALENDAR,
             Manifest.permission.READ_CONTACTS,
             Manifest.permission.READ_CALL_LOG,
+            Manifest.permission.READ_PHONE_STATE,
             Manifest.permission.READ_SMS
         )
         
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
             permissionsToRequest.add(Manifest.permission.READ_MEDIA_IMAGES)
+            permissionsToRequest.add(Manifest.permission.READ_MEDIA_VIDEO)
         } else {
             permissionsToRequest.add(Manifest.permission.READ_EXTERNAL_STORAGE)
         }
@@ -61,9 +85,10 @@ class MainActivity : ComponentActivity() {
         }
         
         val settingsRepository = RealSettingsRepository(this)
+        val rssRepository = com.example.windows11mobile.data.RssRepository()
         val homeViewModel = androidx.lifecycle.ViewModelProvider(
             this,
-            com.example.windows11mobile.ui.home.HomeViewModelFactory(settingsRepository, application)
+            com.example.windows11mobile.ui.home.HomeViewModelFactory(settingsRepository, rssRepository, application)
         )[com.example.windows11mobile.ui.home.HomeViewModel::class.java]
         
         setContent {
@@ -118,14 +143,27 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Improve "Go Home" transition feel by removing activity enter/exit animations
+        // so the OS-level gesture animation takes center stage without interference
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            overrideActivityTransition(Activity.OVERRIDE_TRANSITION_OPEN, 0, 0)
+        } else {
+            @Suppress("DEPRECATION")
+            overridePendingTransition(0, 0)
+        }
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         // Check if this is a Home button press or a re-launch of the main activity
         if (intent.action == Intent.ACTION_MAIN && intent.hasCategory(Intent.CATEGORY_HOME)) {
             val settingsRepository = RealSettingsRepository(this)
+            val rssRepository = com.example.windows11mobile.data.RssRepository()
             val homeViewModel = androidx.lifecycle.ViewModelProvider(
                 this,
-                com.example.windows11mobile.ui.home.HomeViewModelFactory(settingsRepository, application)
+                com.example.windows11mobile.ui.home.HomeViewModelFactory(settingsRepository, rssRepository, application)
             )[com.example.windows11mobile.ui.home.HomeViewModel::class.java]
             homeViewModel.onHomeButtonPressed()
         }

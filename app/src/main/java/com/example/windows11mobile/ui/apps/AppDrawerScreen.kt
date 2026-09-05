@@ -297,14 +297,32 @@ fun AppDrawerScreen(
                     onAppSettings = {
                         val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
                             data = Uri.fromParts("package", currentApp.packageName, null)
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         }
                         context.startActivity(intent)
                     },
                     onUninstall = {
-                        val intent = Intent(Intent.ACTION_DELETE).apply {
-                            data = Uri.fromParts("package", currentApp.packageName, null)
+                        val pkgName = currentApp.packageName
+                        try {
+                            android.util.Log.d("Uninstall", "Triggering system uninstall for: $pkgName")
+                            val intent = Intent(Intent.ACTION_DELETE).apply {
+                                data = Uri.parse("package:$pkgName")
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            android.util.Log.e("Uninstall", "Standard uninstall failed, trying fallback", e)
+                            try {
+                                val fallback = Intent(Intent.ACTION_VIEW).apply {
+                                    data = Uri.parse("market://details?id=$pkgName")
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                context.startActivity(fallback)
+                                android.widget.Toast.makeText(context, "Please uninstall from the Play Store page", android.widget.Toast.LENGTH_LONG).show()
+                            } catch (e2: Exception) {
+                                android.widget.Toast.makeText(context, "Uninstallation not supported on this device", android.widget.Toast.LENGTH_SHORT).show()
+                            }
                         }
-                        context.startActivity(intent)
                     },
                     onShare = {
                         val intent = Intent(Intent.ACTION_SEND).apply {
@@ -312,6 +330,21 @@ fun AppDrawerScreen(
                             putExtra(Intent.EXTRA_TEXT, "Check out ${currentApp.name} at https://play.google.com/store/apps/details?id=${currentApp.packageName}")
                         }
                         context.startActivity(Intent.createChooser(intent, "Share ${currentApp.name}"))
+                    },
+                    onCheckForUpdates = {
+                        try {
+                            val intent = Intent("com.google.android.finsky.VIEW_MY_DOWNLOADS").apply {
+                                setPackage("com.android.vending")
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            try {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=com.android.vending"))
+                                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                context.startActivity(intent)
+                            } catch (e2: Exception) {}
+                        }
                     },
                     shortcuts = shortcuts,
                     onShortcutClick = { viewModel.launchShortcut(it) },
@@ -330,53 +363,60 @@ fun LauncherSettingsItem(
     FluentSurface(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
+            .padding(horizontal = 8.dp),
+        shape = RoundedCornerShape(20.dp),
         alpha = tileOpacity,
         effect = com.example.windows11mobile.ui.components.FluentEffect.ACRYLIC,
-        blurRadius = 80,
-        tintColor = Color.Black.copy(alpha = 0.15f),
-        luminosityAlpha = 0.1f
+        blurRadius = 120,
+        tintColor = Color.Black.copy(alpha = 0.4f),
+        luminosityAlpha = 0.2f
     ) {
-        Row(
-            modifier = Modifier
-                .padding(12.dp)
-                .fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            modifier = Modifier.padding(vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Box(
                 modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)),
-                contentAlignment = Alignment.Center
+                    .fillMaxWidth()
+                    .clickable(onClick = onClick)
+                    .padding(vertical = 4.dp)
             ) {
-                FluentIcon(
-                    imageVector = FluentIcons.Settings,
-                    contentDescription = null,
-                    size = 28.dp,
-                    gradient = Brush.linearGradient(
-                        colors = listOf(
-                            MaterialTheme.colorScheme.primary,
-                            MaterialTheme.colorScheme.secondary
+                Row(
+                    modifier = Modifier
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Settings,
+                            contentDescription = null,
+                            modifier = Modifier.size(32.dp),
+                            tint = Color.Black
                         )
-                    )
-                )
-            }
-            
-            Spacer(modifier = Modifier.width(16.dp))
-            
-            Column {
-                Text(
-                    text = "Launcher Settings",
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "Personalize your experience",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                )
+                    }
+                    
+                    Spacer(modifier = Modifier.width(16.dp))
+                    
+                    Column {
+                        Text(
+                            text = "Launcher Settings",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                        Text(
+                            text = "com.example.windows11mobile",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
             }
         }
     }

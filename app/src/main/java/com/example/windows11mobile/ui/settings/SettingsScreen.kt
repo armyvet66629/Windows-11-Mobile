@@ -50,10 +50,12 @@ fun SettingsScreen(
     val hiddenPages by viewModel.hiddenPages.collectAsStateWithLifecycle()
     val statusBarMode by viewModel.statusBarMode.collectAsStateWithLifecycle()
     val tileOpacity by viewModel.tileOpacity.collectAsStateWithLifecycle()
+    val rssFeeds by viewModel.rssFeeds.collectAsStateWithLifecycle()
     
     var showAddAppDialog by remember { mutableStateOf(false) }
     var showWeatherPicker by remember { mutableStateOf(false) }
     var showPageManager by remember { mutableStateOf(false) }
+    var showRssManager by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
     val launcher = rememberLauncherForActivityResult(
@@ -378,6 +380,16 @@ fun SettingsScreen(
             }
 
             item {
+                SettingsClickableItem(
+                    title = "Restart Launcher",
+                    subtitle = "Restart the application to apply deep changes",
+                    icon = Icons.Rounded.Refresh,
+                    tileOpacity = tileOpacity,
+                    onClick = { viewModel.restartLauncher(context) }
+                )
+            }
+
+            item {
                 Spacer(modifier = Modifier.height(24.dp))
                 Box(
                     modifier = Modifier
@@ -521,7 +533,62 @@ fun SettingsScreen(
                     Text("Add App to Dock")
                 }
             }
+
+            item {
+                SettingsClickableItem(
+                    title = "Manage RSS Feeds",
+                    subtitle = "Add or remove news sources for the Widgets Board",
+                    icon = Icons.Rounded.RssFeed,
+                    tileOpacity = tileOpacity,
+                    onClick = { showRssManager = true }
+                )
+            }
+
+            item {
+                Spacer(modifier = Modifier.height(32.dp))
+                FluentSurface(
+                    modifier = Modifier.fillMaxWidth(),
+                    alpha = 0.3f,
+                    effect = com.example.windows11mobile.ui.components.FluentEffect.MICA,
+                    shape = RoundedCornerShape(20.dp)
+                ) {
+                    Column(modifier = Modifier.padding(20.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Rounded.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text("Advanced Tips", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
+                        }
+                        Spacer(modifier = Modifier.height(16.dp))
+                        TipItem(
+                            title = "People Hub Debug",
+                            description = "Tap the 'People' title in the Hub to reveal debug info and force a refresh of calls/messages."
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        TipItem(
+                            title = "Customize News",
+                            description = "Double-tap the 'News' header in the Widgets Board to manage your RSS feeds and categories."
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        TipItem(
+                            title = "Live Tile Refresh",
+                            description = "Recent activity entries are automatically cleaned up to show only the 50 newest events."
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(40.dp))
+            }
         }
+    }
+
+    if (showRssManager) {
+        com.example.windows11mobile.ui.news.CustomizeFeedDialog(
+            selectedCategories = emptySet(), // Categories not managed here for simplicity
+            rssFeeds = rssFeeds,
+            onDismiss = { showRssManager = false },
+            onSaveCategories = { },
+            onAddRssFeed = { viewModel.addRssFeed(it) },
+            onRemoveRssFeed = { viewModel.removeRssFeed(it) }
+        )
     }
 
     if (showAddAppDialog) {
@@ -877,6 +944,14 @@ fun AddAppToDockDialog(
         containerColor = MaterialTheme.colorScheme.surface,
         tonalElevation = 8.dp
     )
+}
+
+@Composable
+fun TipItem(title: String, description: String) {
+    Column {
+        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+        Text(description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+    }
 }
 
 @Composable

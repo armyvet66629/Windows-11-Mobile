@@ -2,6 +2,8 @@ package com.example.windows11mobile.data
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import java.text.SimpleDateFormat
+import java.util.*
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 import retrofit2.http.GET
@@ -46,40 +48,38 @@ class RealNewsRepository(private val apiKey: String?) : NewsRepository {
         }
     }
 
-    private fun getMockArticles(): List<NewsArticle> = listOf(
-        NewsArticle(
-            title = "Microsoft Announces Next Generation of Windows",
-            description = "The new update brings a fresh look and improved productivity features to the world's most popular desktop OS.",
-            url = "https://microsoft.com",
-            urlToImage = "https://images.unsplash.com/photo-1633419461186-7d40a38105ec",
-            publishedAt = "2026-08-21T10:00:00Z",
-            source = NewsSource("ms", "Microsoft News")
-        ),
-        NewsArticle(
-            title = "Jetpack Compose: The Future of Android UI",
-            description = "Google continues to evolve its modern toolkit for building native Android UI.",
-            url = "https://developer.android.com",
-            urlToImage = "https://images.unsplash.com/photo-1607252658945-978a91f958b9",
-            publishedAt = "2026-08-21T11:00:00Z",
-            source = NewsSource("google", "Android Developers")
-        ),
-        NewsArticle(
-            title = "Windows 11 Mobile: A Concept Realized",
-            description = "What happens when you bring the Fluent Design system to a mobile form factor? This project explores the possibilities.",
-            url = "https://github.com",
-            urlToImage = "https://images.unsplash.com/photo-1512941937669-90a1b58e7e9c",
-            publishedAt = "2026-08-21T12:00:00Z",
-            source = NewsSource("gh", "GitHub Trends")
-        ),
-        NewsArticle(
-            title = "New Surface Duo 3 Rumors Surfaces",
-            description = "Leaks suggest a more integrated approach to the dual-screen experience with Android 15.",
-            url = "https://windowscentral.com",
-            urlToImage = "https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0",
-            publishedAt = "2026-08-21T13:00:00Z",
-            source = NewsSource("wc", "Windows Central")
+    private fun getMockArticles(): List<NewsArticle> {
+        val calendar = Calendar.getInstance()
+        val today = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).format(calendar.time)
+        val hour = calendar.get(Calendar.HOUR_OF_DAY)
+        
+        return listOf(
+            NewsArticle(
+                title = "Microsoft Surface Duo 3: New Leaks Suggest Major Design Shift",
+                description = "Internal sources claim Microsoft is moving towards a more traditional foldable screen for its next mobile device.",
+                url = "https://microsoft.com/surface/1",
+                urlToImage = "https://images.unsplash.com/photo-1633419461186-7d40a38105ec",
+                publishedAt = today,
+                source = NewsSource("ms", "Microsoft News")
+            ),
+            NewsArticle(
+                title = "Android 15 Features: Everything We Know So Far",
+                description = "Google's upcoming update focuses heavily on privacy and edge-to-edge app experiences.",
+                url = "https://developer.android.com/android15",
+                urlToImage = "https://images.unsplash.com/photo-1607252658945-978a91f958b9",
+                publishedAt = today,
+                source = NewsSource("google", "Android Developers")
+            ),
+            NewsArticle(
+                title = if (hour % 2 == 0) "Fluent Design: Building the Next Generation of Apps" else "Windows 11 Mobile Concept Gaining Traction",
+                description = "Developers are finding new ways to bring the Windows 11 aesthetic to portable devices.",
+                url = "https://github.com/windows11concept",
+                urlToImage = "https://images.unsplash.com/photo-1512941937669-90a1b58e7e9c",
+                publishedAt = today,
+                source = NewsSource("dev", "Dev Community")
+            )
         )
-    )
+    }
 }
 
 interface NewsApiService {

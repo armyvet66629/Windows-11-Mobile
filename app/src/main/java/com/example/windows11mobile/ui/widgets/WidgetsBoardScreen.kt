@@ -6,6 +6,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -44,6 +45,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import coil.request.CachePolicy
 import com.example.windows11mobile.ui.components.FluentSurface
 import com.example.windows11mobile.ui.components.FluentEffect
 import com.example.windows11mobile.ui.theme.FluentIcons
@@ -78,6 +81,7 @@ fun WidgetsBoardScreen(
     val calendarEvents by newsViewModel.calendarEvents.collectAsStateWithLifecycle()
     val availableWidgets by newsViewModel.availableWidgets.collectAsStateWithLifecycle()
     val currentMedia by newsViewModel.currentMedia.collectAsStateWithLifecycle()
+    val recentPhotos by newsViewModel.recentPhotos.collectAsStateWithLifecycle()
     
     val haptics = LocalHapticFeedback.current
     
@@ -368,7 +372,8 @@ fun WidgetsBoardScreen(
                         }
 
                         Box(modifier = Modifier.fillMaxWidth()) {
-                            FluentSurface(
+                            // Container for widget/card content - Remove background for widgets
+                            Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .combinedClickable(
@@ -377,34 +382,26 @@ fun WidgetsBoardScreen(
                                             isEditMode = true
                                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                         }
-                                    ),
-                                shape = RoundedCornerShape(24.dp),
-                                alpha = surfaceAlpha,
-                                effect = surfaceEffect,
-                                blurRadius = if (item.isWidget) 0 else 80,
-                                tintColor = Color.Black.copy(alpha = 0.2f),
-                                borderAlpha = if (item.isWidget) 0f else 0.1f
+                                    )
+                                    .clip(RoundedCornerShape(24.dp))
                             ) {
-                                Box(modifier = Modifier.fillMaxWidth().heightIn(min = itemHeight)) {
-                                    Column {
-                                        when {
-                                            item.isWidget && item.widgetId != null -> {
-                                                WidgetHostItem(widgetId = item.widgetId, sharedHost = appWidgetHost)
-                                            }
-                                            item.specialType == "calendar" -> CalendarWidget(calendarEvents)
-                                            item.specialType == "music" -> MusicBoardWidget(
-                                                media = currentMedia,
-                                                onPlayPause = { newsViewModel.mediaPlayPause() },
-                                                onSkipNext = { newsViewModel.mediaSkipNext() },
-                                                onSkipPrevious = { newsViewModel.mediaSkipPrevious() }
-                                            )
-                                            item.specialType == "tasks" -> TasksWidget(
-                                                tasks = tasks, 
-                                                onToggle = { newsViewModel.toggleTask(it) }, 
-                                                onAdd = { newsViewModel.addTask(it) },
-                                                onClear = { newsViewModel.clearTasks() }
-                                            )
-                                        }
+                                // For non-app-widgets, keep the FluentSurface effect
+                                if (!item.isWidget) {
+                                    FluentSurface(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(24.dp),
+                                        alpha = surfaceAlpha,
+                                        effect = surfaceEffect,
+                                        blurRadius = 80,
+                                        tintColor = Color.Black.copy(alpha = 0.2f),
+                                        borderAlpha = 0.1f
+                                    ) {
+                                        BoardContent(item, itemHeight, newsViewModel, currentMedia, calendarEvents, tasks, appWidgetHost, recentPhotos)
+                                    }
+                                } else {
+                                    // For App Widgets, just show the content directly with no background
+                                    Box(modifier = Modifier.fillMaxWidth().height(itemHeight)) {
+                                        WidgetHostItem(widgetId = item.widgetId!!, sharedHost = appWidgetHost)
                                     }
                                 }
                             }
@@ -529,6 +526,40 @@ fun WidgetsBoardScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun BoardContent(
+    item: com.example.windows11mobile.data.HomeTile,
+    itemHeight: androidx.compose.ui.unit.Dp,
+    newsViewModel: NewsFeedViewModel,
+    currentMedia: com.example.windows11mobile.data.MediaData,
+    calendarEvents: List<com.example.windows11mobile.data.CalendarEvent>,
+    tasks: List<com.example.windows11mobile.ui.news.TodoTask>,
+    appWidgetHost: android.appwidget.AppWidgetHost,
+    recentPhotos: List<Uri>
+) {
+    Box(modifier = Modifier.fillMaxWidth().height(itemHeight)) {
+        when {
+            item.isWidget && item.widgetId != null -> {
+                WidgetHostItem(widgetId = item.widgetId, sharedHost = appWidgetHost)
+            }
+            item.specialType == "calendar" -> CalendarWidget(calendarEvents)
+            item.specialType == "music" -> MusicBoardWidget(
+                media = currentMedia,
+                onPlayPause = { newsViewModel.mediaPlayPause() },
+                onSkipNext = { newsViewModel.mediaSkipNext() },
+                onSkipPrevious = { newsViewModel.mediaSkipPrevious() }
+            )
+            item.specialType == "tasks" -> TasksWidget(
+                tasks = tasks,
+                onToggle = { newsViewModel.toggleTask(it) },
+                onAdd = { newsViewModel.addTask(it) },
+                onClear = { newsViewModel.clearTasks() }
+            )
+            item.specialType == "photos" -> PhotosBoardWidget(recentPhotos)
         }
     }
 }
@@ -852,6 +883,92 @@ fun MusicBoardWidget(
                     "Nothing playing",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun PhotosBoardWidget(localPhotos: List<Uri>) {
+    val context = LocalContext.current
+    val fallbackPhotos = remember {
+        listOf(
+            "https://images.unsplash.com/photo-1506744038136-46273834b3fb",
+            "https://images.unsplash.com/photo-1511884642898-4c92249e20b6",
+            "https://images.unsplash.com/photo-1434725039720-abb26e22ebe1",
+            "https://images.unsplash.com/photo-1470770841072-f978cf4d019e"
+        ).map { Uri.parse(it) }
+    }
+
+    val currentPhotos = if (localPhotos.isNotEmpty()) localPhotos else fallbackPhotos
+    if (currentPhotos.isEmpty()) return
+
+    var currentIndex by remember { mutableIntStateOf(0) }
+    
+    LaunchedEffect(currentPhotos) {
+        while (currentPhotos.size > 1) {
+            delay(10000)
+            currentIndex = (currentIndex + 1) % currentPhotos.size
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .clickable {
+                try {
+                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                        type = "image/*"
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    context.startActivity(intent)
+                } catch (e: Exception) {
+                    val intent = context.packageManager.getLaunchIntentForPackage("com.google.android.apps.photos")
+                        ?: context.packageManager.getLaunchIntentForPackage("com.android.gallery3d")
+                    if (intent != null) context.startActivity(intent)
+                }
+            }
+    ) {
+        AnimatedContent(
+            targetState = currentPhotos[currentIndex % currentPhotos.size],
+            transitionSpec = {
+                fadeIn(animationSpec = tween(1000)) togetherWith fadeOut(animationSpec = tween(1000))
+            },
+            label = "photoCycle",
+            modifier = Modifier.fillMaxSize()
+        ) { photoUri ->
+            AsyncImage(
+                model = ImageRequest.Builder(LocalContext.current)
+                    .data(photoUri)
+                    .diskCachePolicy(CachePolicy.DISABLED)
+                    .memoryCachePolicy(CachePolicy.DISABLED)
+                    .build(),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+        }
+
+        // Overlay Title - Styled like other board widgets
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(20.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Rounded.PhotoLibrary,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    "Photos",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Black,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
             }
         }

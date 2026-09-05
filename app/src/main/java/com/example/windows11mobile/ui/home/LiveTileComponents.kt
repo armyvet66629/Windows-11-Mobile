@@ -38,6 +38,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import coil.request.CachePolicy
 import com.example.windows11mobile.data.HomeTile
 import com.example.windows11mobile.data.TileSize
 import com.example.windows11mobile.data.Contact
@@ -65,7 +67,15 @@ fun ClockTileContent(tile: HomeTile) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .clickable {
+            .padding(16.dp),
+        verticalArrangement = Arrangement.Bottom
+    ) {
+        Text(
+            text = timeFormat.format(currentTime),
+            style = MaterialTheme.typography.displayLarge.copy(fontSize = 72.sp),
+            fontWeight = FontWeight.W300,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.clickable {
                 try {
                     context.startActivity(Intent(android.provider.AlarmClock.ACTION_SHOW_ALARMS))
                 } catch (e: Exception) {
@@ -74,20 +84,24 @@ fun ClockTileContent(tile: HomeTile) {
                     if (intent != null) context.startActivity(intent)
                 }
             }
-            .padding(16.dp),
-        verticalArrangement = Arrangement.Bottom
-    ) {
-        Text(
-            text = timeFormat.format(currentTime),
-            style = MaterialTheme.typography.displayLarge.copy(fontSize = 72.sp),
-            fontWeight = FontWeight.W300,
-            color = MaterialTheme.colorScheme.onSurface
         )
         Text(
             text = dateFormat.format(currentTime),
-            style = MaterialTheme.typography.titleLarge.copy(fontSize = 24.sp),
+            style = MaterialTheme.typography.titleLarge.copy(fontSize = 18.sp),
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.clickable {
+                try {
+                    val intent = Intent(Intent.ACTION_VIEW).setData(
+                        Uri.parse("content://com.android.calendar/time/")
+                    )
+                    context.startActivity(intent)
+                } catch (e: Exception) {
+                    val intent = context.packageManager.getLaunchIntentForPackage("com.google.android.calendar")
+                        ?: context.packageManager.getLaunchIntentForPackage("com.android.calendar")
+                    if (intent != null) context.startActivity(intent)
+                }
+            }
         )
     }
 }
@@ -119,9 +133,14 @@ fun ClockWeatherTileContent(
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Column(
-            modifier = Modifier
-                .weight(1f)
-                .clickable {
+            modifier = Modifier.weight(1f)
+        ) {
+            Text(
+                text = timeFormat.format(currentTime),
+                style = MaterialTheme.typography.displayLarge.copy(fontSize = 72.sp),
+                fontWeight = FontWeight.W300,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.clickable {
                     try {
                         context.startActivity(Intent(android.provider.AlarmClock.ACTION_SHOW_ALARMS))
                     } catch (e: Exception) {
@@ -130,18 +149,24 @@ fun ClockWeatherTileContent(
                         if (intent != null) context.startActivity(intent)
                     }
                 }
-        ) {
-            Text(
-                text = timeFormat.format(currentTime),
-                style = MaterialTheme.typography.displayLarge.copy(fontSize = 72.sp),
-                fontWeight = FontWeight.W300,
-                color = MaterialTheme.colorScheme.onSurface
             )
             Text(
                 text = dateFormat.format(currentTime),
-                style = MaterialTheme.typography.titleLarge.copy(fontSize = 24.sp),
+                style = MaterialTheme.typography.titleLarge.copy(fontSize = 18.sp),
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.clickable {
+                    try {
+                        val intent = Intent(Intent.ACTION_VIEW).setData(
+                            Uri.parse("content://com.android.calendar/time/")
+                        )
+                        context.startActivity(intent)
+                    } catch (e: Exception) {
+                        val intent = context.packageManager.getLaunchIntentForPackage("com.google.android.calendar")
+                            ?: context.packageManager.getLaunchIntentForPackage("com.android.calendar")
+                        if (intent != null) context.startActivity(intent)
+                    }
+                }
             )
         }
         
@@ -151,12 +176,12 @@ fun ClockWeatherTileContent(
                 .clickable { onWeatherClick() }
                 .padding(bottom = 20.dp) // Move info higher
         ) {
-            val icon = getWeatherIcon(weatherData?.condition ?: "Unknown")
+            val (icon, color) = getWeatherInfo(weatherData?.condition ?: "Unknown")
             Icon(
                 imageVector = icon,
                 contentDescription = null,
                 modifier = Modifier.size(48.dp),
-                tint = if (weatherData?.condition?.contains("Rain") == true) Color(0xFF3498DB) else Color(0xFFFFD700)
+                tint = color
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
@@ -212,28 +237,9 @@ fun WeatherForecastBack(weatherData: com.example.windows11mobile.data.WeatherDat
                 )
             } else {
                 forecast.forEach { day ->
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.weight(1f) // Equal distribution for perfect alignment
-                    ) {
-                        Text(
-                            text = day.day,
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Icon(
-                            imageVector = getWeatherIcon(day.icon),
-                            contentDescription = null,
-                            modifier = Modifier.size(28.dp),
-                            tint = if (day.icon.contains("Rain")) Color(0xFF3498DB) else Color(0xFFFFD700)
-                        )
-                        Text(
-                            text = "${day.temp.toInt()}°",
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.Black,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
+                    val (icon, color) = getWeatherInfo(day.icon)
+                    Box(modifier = Modifier.weight(1f)) {
+                        ForecastItem(day.day, "${day.temp.toInt()}°", icon, color)
                     }
                 }
             }
@@ -323,12 +329,12 @@ fun WeatherTileContent(
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                 )
             }
-            val icon = getWeatherIcon(weatherData?.condition ?: "Unknown")
+            val (icon, color) = getWeatherInfo(weatherData?.condition ?: "Unknown")
             Icon(
                 imageVector = icon,
                 contentDescription = null,
                 modifier = Modifier.size(48.dp),
-                tint = if (weatherData?.condition?.contains("Rain") == true) Color(0xFF3498DB) else Color(0xFFFFD700)
+                tint = color
             )
         }
         
@@ -364,7 +370,8 @@ fun WeatherTileContent(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 weatherData?.hourlyForecast?.take(4)?.forEach { forecast ->
-                    HourlyItem(forecast.time, "${forecast.temp.toInt()}°", getWeatherIcon(forecast.icon))
+                    val (icon, color) = getWeatherInfo(forecast.icon)
+                    HourlyItem(forecast.time, "${forecast.temp.toInt()}°", icon, color)
                 }
             }
         }
@@ -372,60 +379,122 @@ fun WeatherTileContent(
 }
 
 @Composable
-fun HourlyItem(time: String, temp: String, icon: ImageVector) {
+fun HourlyItem(time: String, temp: String, icon: ImageVector, color: Color) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(text = time, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-        Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = Color(0xFFFFD700))
+        Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = color)
         Text(text = temp, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
     }
 }
 
 @Composable
-fun ForecastItem(day: String, temp: String, icon: ImageVector) {
+fun ForecastItem(day: String, temp: String, icon: ImageVector, color: Color) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(text = day, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-        Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(24.dp), tint = Color(0xFFFFD700))
+        Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(24.dp), tint = color)
         Text(text = temp, style = MaterialTheme.typography.labelMedium)
     }
 }
 
-fun getWeatherIcon(condition: String): ImageVector {
+fun getWeatherInfo(condition: String): Pair<ImageVector, Color> {
+    val lower = condition.lowercase()
+    val calendar = Calendar.getInstance()
+    val hour = calendar.get(Calendar.HOUR_OF_DAY)
+    val isNight = hour !in 6..18
+
     return when {
-        condition.contains("Cloud", true) -> Icons.Rounded.Cloud
-        condition.contains("Rain", true) || condition.contains("Drizzle", true) -> Icons.Rounded.WaterDrop
-        condition.contains("Snow", true) -> Icons.Rounded.AcUnit
-        condition.contains("Thunder", true) -> Icons.Rounded.Thunderstorm
-        condition.contains("Clear", true) || condition.contains("Sun", true) -> Icons.Rounded.WbSunny
-        else -> Icons.Rounded.WbCloudy
+        lower.contains("thunderstorm") -> Icons.Rounded.Thunderstorm to Color(0xFF4FC3F7)
+        lower.contains("thunder") || lower.contains("storm") -> Icons.Rounded.FlashOn to Color(0xFF4FC3F7)
+        lower.contains("rain") || lower.contains("drizzle") -> Icons.Rounded.WaterDrop to Color(0xFF29B6F6)
+        lower.contains("snow") || lower.contains("ice") || lower.contains("hail") || lower.contains("sleet") -> Icons.Rounded.AcUnit to Color(0xFFB3E5FC)
+        lower.contains("fog") || lower.contains("mist") || lower.contains("haze") -> Icons.Rounded.BlurOn to Color(0xFFB0BEC5)
+        lower.contains("cloud") -> {
+            if (lower.contains("partly") || lower.contains("mostly") || lower.contains("scattered")) {
+                if (isNight) Icons.Rounded.NightsStay to Color(0xFFB0BEC5)
+                else Icons.Rounded.FilterDrama to Color(0xFFFFD600)
+            } else {
+                Icons.Rounded.Cloud to Color(0xFF90A4AE)
+            }
+        }
+        lower.contains("clear") || lower.contains("sun") || lower.contains("fair") -> {
+            if (isNight) Icons.Rounded.NightsStay to Color(0xFFE0E0E0)
+            else Icons.Rounded.LightMode to Color(0xFFFFD600)
+        }
+        else -> Icons.Rounded.WbCloudy to Color(0xFF90A4AE)
     }
 }
 
 @Composable
-fun PhotoLiveTile(tile: HomeTile) {
-    var photoIndex by remember { mutableIntStateOf(0) }
-    val photos = listOf(
-        "https://images.unsplash.com/photo-1506744038136-46273834b3fb",
-        "https://images.unsplash.com/photo-1511884642898-4c92249e20b6",
-        "https://images.unsplash.com/photo-1434725039720-abb26e22ebe1",
-        "https://images.unsplash.com/photo-1470770841072-f978cf4d019e"
-    )
+fun PhotoLiveTile(tile: HomeTile, localPhotos: List<Uri> = emptyList()) {
+    val fallbackPhotos = remember {
+        listOf(
+            "https://images.unsplash.com/photo-1506744038136-46273834b3fb",
+            "https://images.unsplash.com/photo-1511884642898-4c92249e20b6",
+            "https://images.unsplash.com/photo-1434725039720-abb26e22ebe1",
+            "https://images.unsplash.com/photo-1470770841072-f978cf4d019e"
+        ).map { Uri.parse(it) }
+    }
 
+    val currentPhotos = if (localPhotos.isNotEmpty()) localPhotos else fallbackPhotos
+    if (currentPhotos.isEmpty()) return
+
+    // CRITICAL: Use rememberUpdatedState for the loop to see data updates
+    val photosState = rememberUpdatedState(currentPhotos)
+    var currentIndex by remember { mutableIntStateOf(0) }
+    
+    // Persistent timer loop that NEVER restarts
     LaunchedEffect(Unit) {
         while(true) {
-            delay(10000)
-            photoIndex = (photoIndex + 1) % photos.size
+            delay(10000) // Transition every 10 seconds
+            val photos = photosState.value
+            if (photos.size > 1) {
+                currentIndex = (currentIndex + 1) % photos.size
+            }
         }
     }
 
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .clickable {
+                // Potential action
+            }
+    ) {
+        AnimatedContent(
+            targetState = currentIndex, 
+            transitionSpec = {
+                fadeIn(animationSpec = tween(1500)) togetherWith fadeOut(animationSpec = tween(1500))
+            },
+            label = "photoCycle",
+            modifier = Modifier.fillMaxSize()
+        ) { index ->
+            val photos = photosState.value
+            val photoUri = if (photos.isNotEmpty()) photos[index % photos.size] else fallbackPhotos[0]
+            PhotoItem(photoUri, tile.size)
+        }
+    }
+}
+
+@Composable
+private fun PhotoItem(photo: Any, size: TileSize) {
+    val context = LocalContext.current
     Box(modifier = Modifier.fillMaxSize()) {
         AsyncImage(
-            model = photos[photoIndex],
+            model = ImageRequest.Builder(context)
+                .data(photo)
+                .diskCachePolicy(CachePolicy.DISABLED)
+                .memoryCachePolicy(CachePolicy.DISABLED)
+                .crossfade(true)
+                .build(),
             contentDescription = null,
             modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Crop
+            contentScale = ContentScale.Crop,
+            onError = { error ->
+                android.util.Log.e("PhotoLiveTile", "Error loading photo: $photo", error.result.throwable)
+            }
         )
         
-        if (tile.size != TileSize.SMALL) {
+        if (size != TileSize.SMALL) {
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
@@ -816,9 +885,8 @@ fun LiveTileList(
                 tint = headerColor
             )
             Spacer(modifier = Modifier.width(8.dp))
-            val titleText = if (tile.notificationCount > 0) "${tile.label.uppercase()} (${tile.notificationCount})" else tile.label.uppercase()
             Text(
-                text = titleText,
+                text = tile.label.uppercase(),
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.Black,
                 letterSpacing = 1.2.sp,
@@ -1175,17 +1243,17 @@ fun FolderTileContent(tile: HomeTile) {
 
 @Composable
 fun StandardTileContent(tile: HomeTile, icon: android.graphics.drawable.Drawable?) {
-    Column(modifier = Modifier.fillMaxSize().padding(12.dp), horizontalAlignment = if (tile.size == TileSize.WIDE || tile.size == TileSize.LARGE) Alignment.Start else Alignment.CenterHorizontally, verticalArrangement = if (tile.size == TileSize.WIDE || tile.size == TileSize.LARGE) Arrangement.Top else Arrangement.Center) {
-        Box(modifier = if (tile.size == TileSize.WIDE || tile.size == TileSize.LARGE) Modifier.size(32.dp) else Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-            if (icon != null) AsyncImage(model = icon, contentDescription = null, modifier = Modifier.size(when (tile.size) { TileSize.SMALL -> 28.dp; TileSize.MEDIUM -> 64.dp; TileSize.WIDE -> 40.dp; TileSize.LARGE -> 72.dp }))
-            else FluentIcon(imageVector = when (tile.label.lowercase()) { "settings" -> FluentIcons.Settings; "calendar" -> FluentIcons.Calendar; "people" -> Icons.Rounded.Person; "messaging" -> FluentIcons.Message; "phone" -> Icons.Rounded.Phone; "camera" -> Icons.Rounded.CameraAlt; "mail", "gmail" -> FluentIcons.Mail; "maps" -> Icons.Rounded.Map; "photos" -> FluentIcons.Photos; else -> FluentIcons.Apps }, contentDescription = null, size = when (tile.size) { TileSize.SMALL -> 28.dp; TileSize.MEDIUM -> 64.dp; TileSize.WIDE -> 40.dp; TileSize.LARGE -> 72.dp }, gradient = Brush.linearGradient(colors = listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary)))
+    Column(modifier = Modifier.fillMaxSize().padding(if (tile.size == TileSize.SMALL) 4.dp else 12.dp), horizontalAlignment = if (tile.size == TileSize.WIDE || tile.size == TileSize.LARGE) Alignment.Start else Alignment.CenterHorizontally, verticalArrangement = if (tile.size == TileSize.WIDE || tile.size == TileSize.LARGE) Arrangement.Top else Arrangement.Center) {
+        Box(modifier = if (tile.size == TileSize.WIDE || tile.size == TileSize.LARGE) Modifier.size(36.dp) else Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+            if (icon != null) AsyncImage(model = icon, contentDescription = null, modifier = Modifier.size(when (tile.size) { TileSize.SMALL -> 40.dp; TileSize.MEDIUM -> 72.dp; TileSize.WIDE -> 48.dp; TileSize.LARGE -> 84.dp }))
+            else FluentIcon(imageVector = when (tile.label.lowercase()) { "settings" -> FluentIcons.Settings; "calendar" -> FluentIcons.Calendar; "people" -> Icons.Rounded.Person; "messaging" -> FluentIcons.Message; "phone" -> Icons.Rounded.Phone; "camera" -> Icons.Rounded.CameraAlt; "mail", "gmail" -> FluentIcons.Mail; "maps" -> Icons.Rounded.Map; "photos" -> FluentIcons.Photos; else -> FluentIcons.Apps }, contentDescription = null, size = when (tile.size) { TileSize.SMALL -> 40.dp; TileSize.MEDIUM -> 72.dp; TileSize.WIDE -> 48.dp; TileSize.LARGE -> 84.dp }, gradient = Brush.linearGradient(colors = listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary)))
         }
         if (tile.size != TileSize.SMALL) {
             if (tile.size == TileSize.WIDE || tile.size == TileSize.LARGE) {
-                Spacer(modifier = Modifier.height(8.dp)); Text(text = if (tile.notificationCount > 0) "${tile.label} (${tile.notificationCount})" else tile.label, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onSurface)
+                Spacer(modifier = Modifier.height(8.dp)); Text(text = tile.label, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onSurface)
                 if (tile.notificationSummary != null) { Spacer(modifier = Modifier.height(4.dp)); Text(text = tile.notificationSummary, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold, maxLines = if (tile.size == TileSize.LARGE) 6 else 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface) }
                 else { Spacer(modifier = Modifier.height(4.dp)); Text(text = "No new notifications", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)) }
-            } else { Text(text = if (tile.notificationCount > 0) "${tile.label} (${tile.notificationCount})" else tile.label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface) }
+            } else { Text(text = tile.label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface) }
         }
     }
 }

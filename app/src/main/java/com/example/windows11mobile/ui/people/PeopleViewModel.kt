@@ -23,6 +23,9 @@ class PeopleViewModel(
     val recentActivity: StateFlow<List<RecentActivity>> = repository.recentActivity
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val lastSyncTime: StateFlow<Long> = repository.lastSyncTime
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
+
     init {
         refresh()
         

@@ -15,6 +15,7 @@ import com.example.windows11mobile.data.NotificationManager
 import com.example.windows11mobile.data.TileSize
 import com.example.windows11mobile.services.WindowsNotificationListener
 import android.content.Intent
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
@@ -38,6 +39,14 @@ class NewsFeedViewModel(
 
     private val calendarRepository = CalendarRepository(context)
     val calendarEvents = calendarRepository.events
+
+    private val photosRepository = com.example.windows11mobile.data.PhotosRepository(context)
+    val recentPhotos = flow {
+        while(true) {
+            emit(photosRepository.getRecentPhotos(20))
+            delay(120000) // 2 mins
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _tasks = MutableStateFlow<List<TodoTask>>(emptyList())
     val tasks: StateFlow<List<TodoTask>> = _tasks.asStateFlow()
@@ -105,17 +114,36 @@ class NewsFeedViewModel(
             settingsRepository.boardWidgets.collect { json ->
                 if (json != null) {
                     try {
-                        val decoded: List<HomeTile> = Json.decodeFromString(json)
+                        var decoded: List<HomeTile> = Json.decodeFromString(json)
+                        var changed = false
+                        
                         // Migration: Add music widget if missing
                         if (!decoded.any { it.specialType == "music" }) {
-                            val migrated = listOf(
-                                HomeTile("music_widget", null, "Music", TileSize.WIDE, specialType = "music")
-                            ) + decoded
-                            _boardWidgets.value = migrated
-                            saveBoardWidgets(migrated)
-                        } else {
-                            _boardWidgets.value = decoded
+                            decoded = listOf(HomeTile("music_widget", null, "Music", TileSize.WIDE, specialType = "music")) + decoded
+                            changed = true
                         }
+                        
+                        // Migration: Ensure Photos widget is WIDE and all App Widgets are at least MEDIUM
+                        decoded = decoded.map { 
+                            if (it.specialType == "photos" && it.size != TileSize.WIDE) {
+                                changed = true
+                                it.copy(size = TileSize.WIDE)
+                            } else if (it.isWidget && it.size == TileSize.SMALL) {
+                                changed = true
+                                it.copy(size = TileSize.WIDE)
+                            } else it
+                        }
+                        
+                        // Migration: Add photos widget if missing
+                        if (!decoded.any { it.specialType == "photos" }) {
+                            decoded = decoded + HomeTile("photos_widget", null, "Photos", TileSize.WIDE, specialType = "photos")
+                            changed = true
+                        }
+                        
+                        if (changed) {
+                            saveBoardWidgets(decoded)
+                        }
+                        _boardWidgets.value = decoded
                     } catch (e: Exception) {
                         _boardWidgets.value = getDefaultBoardWidgets()
                     }
@@ -129,7 +157,8 @@ class NewsFeedViewModel(
     private fun getDefaultBoardWidgets() = listOf(
         HomeTile("music_widget", null, "Music", TileSize.WIDE, specialType = "music"),
         HomeTile("calendar", null, "Calendar", specialType = "calendar"),
-        HomeTile("tasks", null, "To Do", specialType = "tasks")
+        HomeTile("tasks", null, "To Do", specialType = "tasks"),
+        HomeTile("photos_widget", null, "Photos", TileSize.WIDE, specialType = "photos")
     )
 
     fun mediaPlayPause() {
@@ -157,6 +186,7 @@ class NewsFeedViewModel(
         val newWidget = HomeTile(
             id = UUID.randomUUID().toString(),
             label = label,
+            size = TileSize.WIDE, // Force WIDE for new widgets
             widgetId = widgetId,
             isWidget = true
         )
@@ -188,12 +218,36 @@ class NewsFeedViewModel(
     fun refresh() {
         viewModelScope.launch {
             _isLoading.value = true
-            val newsApiArticles = repository.getTopHeadlines(preferredCategories.value)
-            val rssArticles = rssRepository.fetchFeeds(rssFeeds.value)
-            
-            val combined = (newsApiArticles + rssArticles).sortedByDescending { it.publishedAt }
-            _articles.value = combined.distinctBy { it.url }
-            _isLoading.value = false
+            try {
+                val feedUrls = rssFeeds.value
+                android.util.Log.d("NewsFeedViewModel", "Refreshing feeds. Count: ${feedUrls.size}. URLs: $feedUrls")
+                
+                val newsApiArticles = try {
+                    repository.getTopHeadlines(preferredCategories.value)
+                } catch (e: Exception) {
+                    android.util.Log.e("NewsFeedViewModel", "NewsAPI Error", e)
+                    emptyList()
+                }
+                
+                val rssArticles = try {
+                    android.util.Log.d("NewsFeedViewModel", "Calling rssRepository.fetchFeeds...")
+                    rssRepository.fetchFeeds(feedUrls)
+                } catch (e: Exception) {
+                    android.util.Log.e("NewsFeedViewModel", "RSS Fetch Error", e)
+                    emptyList()
+                }
+                
+                android.util.Log.d("NewsFeedViewModel", "Combined Results: ${newsApiArticles.size} NewsAPI, ${rssArticles.size} RSS")
+                
+                val combined = (newsApiArticles + rssArticles).sortedByDescending { it.publishedAt }
+                val result = combined.distinctBy { it.url }
+                android.util.Log.d("NewsFeedViewModel", "Emitting ${result.size} articles to UI")
+                _articles.value = result
+            } catch (e: Exception) {
+                android.util.Log.e("NewsFeedViewModel", "Refresh Global Error", e)
+            } finally {
+                _isLoading.value = false
+            }
         }
     }
 
@@ -205,7 +259,10 @@ class NewsFeedViewModel(
 
     fun addRssFeed(url: String) {
         viewModelScope.launch {
-            settingsRepository.addRssFeed(url)
+            val formattedUrl = if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                "https://$url"
+            } else url
+            settingsRepository.addRssFeed(formattedUrl)
         }
     }
 

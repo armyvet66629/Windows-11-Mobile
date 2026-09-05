@@ -47,12 +47,12 @@ fun AdvancedFluentMenu(
     onRemove: () -> Unit = {},
     onMoveTile: () -> Unit = {},
     onAppSettings: () -> Unit,
-    onCheckForUpdates: () -> Unit = {},
     onUninstall: () -> Unit = {},
     onShare: () -> Unit = {},
     onRefreshTile: () -> Unit = {},
     onClearNotifications: () -> Unit = {},
     onRename: () -> Unit = {},
+    onCheckForUpdates: () -> Unit = {},
     shortcuts: List<ShortcutInfo> = emptyList(),
     onShortcutClick: (ShortcutInfo) -> Unit = {},
     modifier: Modifier = Modifier,
@@ -80,8 +80,8 @@ fun AdvancedFluentMenu(
         onAppSettings = onAppSettings,
         onUninstall = onUninstall,
         onShare = onShare,
-        onCheckForUpdates = onCheckForUpdates,
         onRefreshTile = onRefreshTile,
+        onCheckForUpdates = onCheckForUpdates,
         shortcuts = shortcuts,
         onShortcutClick = onShortcutClick,
         modifier = modifier,
@@ -116,8 +116,8 @@ fun AdvancedFluentMenu(
     onAppSettings: () -> Unit,
     onUninstall: () -> Unit = {},
     onShare: () -> Unit = {},
-    onCheckForUpdates: () -> Unit = {},
     onRefreshTile: () -> Unit = {},
+    onCheckForUpdates: () -> Unit = {},
     shortcuts: List<ShortcutInfo> = emptyList(),
     onShortcutClick: (ShortcutInfo) -> Unit = {},
     modifier: Modifier = Modifier,
@@ -168,19 +168,28 @@ fun AdvancedFluentMenu(
             QuickActionButton(
                 icon = FluentIcons.Share,
                 contentDescription = "Share",
-                onClick = onShare
+                onClick = {
+                    onShare()
+                    onDismiss()
+                }
             )
             if (!isWidget && specialType == null) {
                 QuickActionButton(
                     icon = FluentIcons.Uninstall,
                     contentDescription = "Uninstall",
-                    onClick = onUninstall
+                    onClick = {
+                        onUninstall()
+                        onDismiss()
+                    }
                 )
             }
             QuickActionButton(
                 icon = FluentIcons.Info,
                 contentDescription = "App Info",
-                onClick = onAppSettings
+                onClick = {
+                    onAppSettings()
+                    onDismiss()
+                }
             )
         }
 
@@ -532,14 +541,30 @@ fun AdvancedFluentMenu(
             Spacer(modifier = Modifier.height(10.dp))
         }
 
-        ActionButton(
-            text = "Check for Updates",
-            icon = FluentIcons.Search,
-            onClick = {
-                onCheckForUpdates()
-                onDismiss()
-            }
-        )
+        if (!isFolder && !isWidget && specialType == null && packageName != null) {
+            ActionButton(
+                text = "Uninstall",
+                icon = FluentIcons.Uninstall,
+                onClick = {
+                    onUninstall()
+                    onDismiss()
+                }
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+        }
+
+        // Only show "Check for Updates" for Google Play Store
+        if (packageName == "com.android.vending") {
+            ActionButton(
+                text = "Check for Updates",
+                icon = Icons.Rounded.Update,
+                onClick = {
+                    onCheckForUpdates()
+                    onDismiss()
+                }
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+        }
     }
 }
 
