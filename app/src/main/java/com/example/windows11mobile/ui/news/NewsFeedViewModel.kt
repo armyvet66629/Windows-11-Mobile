@@ -58,7 +58,16 @@ class NewsFeedViewModel(
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
     private val _boardWidgets = MutableStateFlow<List<HomeTile>>(emptyList())
-    val boardWidgets: StateFlow<List<HomeTile>> = _boardWidgets.asStateFlow()
+    
+    val hiddenNativeWidgets = settingsRepository.hiddenNativeWidgets.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        emptySet()
+    )
+
+    val boardWidgets: StateFlow<List<HomeTile>> = combine(_boardWidgets, hiddenNativeWidgets) { widgets, hidden ->
+        widgets.filter { it.specialType == null || !hidden.contains(it.specialType) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val currentMedia = NotificationManager.currentMedia
 
@@ -140,6 +149,12 @@ class NewsFeedViewModel(
                             changed = true
                         }
                         
+                        // Migration: Add system toggles if missing
+                        if (!decoded.any { it.specialType == "system" }) {
+                            decoded = decoded + HomeTile("system_widget", null, "System Settings", TileSize.WIDE, specialType = "system")
+                            changed = true
+                        }
+                        
                         if (changed) {
                             saveBoardWidgets(decoded)
                         }
@@ -158,7 +173,8 @@ class NewsFeedViewModel(
         HomeTile("music_widget", null, "Music", TileSize.WIDE, specialType = "music"),
         HomeTile("calendar", null, "Calendar", specialType = "calendar"),
         HomeTile("tasks", null, "To Do", specialType = "tasks"),
-        HomeTile("photos_widget", null, "Photos", TileSize.WIDE, specialType = "photos")
+        HomeTile("photos_widget", null, "Photos", TileSize.WIDE, specialType = "photos"),
+        HomeTile("system_widget", null, "System Toggles", TileSize.WIDE, specialType = "system")
     )
 
     fun mediaPlayPause() {
@@ -207,6 +223,16 @@ class NewsFeedViewModel(
         }
         _boardWidgets.value = updated
         saveBoardWidgets(updated)
+    }
+
+    fun moveBoardWidget(fromIndex: Int, toIndex: Int) {
+        val current = _boardWidgets.value.toMutableList()
+        if (fromIndex in current.indices && toIndex in current.indices) {
+            val item = current.removeAt(fromIndex)
+            current.add(toIndex, item)
+            _boardWidgets.value = current
+            saveBoardWidgets(current)
+        }
     }
 
     private fun saveBoardWidgets(widgets: List<HomeTile>) {

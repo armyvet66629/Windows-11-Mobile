@@ -96,6 +96,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.absoluteValue
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.coroutineScope
@@ -335,10 +336,39 @@ fun HomeScreen(
         )
     }
 
+    val swipeDownEnabled by viewModel.swipeDownForNotifications.collectAsStateWithLifecycle()
+
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(Color.Transparent)
+            .pointerInput(swipeDownEnabled) {
+                if (!swipeDownEnabled) return@pointerInput
+                awaitEachGesture {
+                    val firstDown = awaitFirstDown(pass = PointerEventPass.Initial)
+                    var totalDrag = Offset.Zero
+                    
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        val dragChange = event.changes.firstOrNull { it.id == firstDown.id } ?: break
+                        
+                        if (dragChange.pressed) {
+                            totalDrag += dragChange.position - dragChange.previousPosition
+                            
+                            // If we pull down significantly and it's mostly vertical
+                            if (totalDrag.y > 150f && totalDrag.x.absoluteValue < totalDrag.y * 0.5f && 
+                                gridState.firstVisibleItemIndex == 0 && gridState.firstVisibleItemScrollOffset <= 0) {
+                                
+                                viewModel.expandNotifications()
+                                dragChange.consume()
+                                break // Stop tracking this gesture
+                            }
+                        } else {
+                            break
+                        }
+                    }
+                }
+            }
             .pointerInput(Unit) {
                 awaitPointerEventScope {
                     while (true) {

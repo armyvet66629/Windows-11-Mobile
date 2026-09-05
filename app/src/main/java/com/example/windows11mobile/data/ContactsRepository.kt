@@ -54,10 +54,6 @@ class ContactsRepository private constructor(private val context: Context) {
     private val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
         override fun onChange(selfChange: Boolean) {
             android.util.Log.d("ContactsRepository", "ContentObserver: Change detected")
-            // Try to show a toast for debug
-            try {
-                android.widget.Toast.makeText(context, "System Activity Detected", android.widget.Toast.LENGTH_SHORT).show()
-            } catch (e: Exception) {}
             
             CoroutineScope(Dispatchers.IO).launch {
                 updateRecentActivity()

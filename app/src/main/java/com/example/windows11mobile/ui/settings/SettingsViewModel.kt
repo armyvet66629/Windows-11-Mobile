@@ -52,6 +52,12 @@ class SettingsViewModel(
     val statusBarMode: StateFlow<String> = repository.statusBarMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "auto")
 
+    val hiddenNativeWidgets: StateFlow<Set<String>> = repository.hiddenNativeWidgets
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
+
+    val swipeDownForNotifications: StateFlow<Boolean> = repository.swipeDownForNotifications
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
     val rssFeeds: StateFlow<Set<String>> = repository.rssFeeds
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
 
@@ -145,6 +151,18 @@ class SettingsViewModel(
     fun setStatusBarMode(mode: String) {
         viewModelScope.launch {
             repository.setStatusBarMode(mode)
+        }
+    }
+
+    fun setNativeWidgetVisibility(id: String, visible: Boolean) {
+        viewModelScope.launch {
+            repository.setNativeWidgetVisibility(id, visible)
+        }
+    }
+
+    fun setSwipeDownForNotifications(enabled: Boolean) {
+        viewModelScope.launch {
+            repository.setSwipeDownForNotifications(enabled)
         }
     }
 

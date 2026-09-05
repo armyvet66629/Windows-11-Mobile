@@ -51,6 +51,8 @@ fun SettingsScreen(
     val statusBarMode by viewModel.statusBarMode.collectAsStateWithLifecycle()
     val tileOpacity by viewModel.tileOpacity.collectAsStateWithLifecycle()
     val rssFeeds by viewModel.rssFeeds.collectAsStateWithLifecycle()
+    val hiddenNativeWidgets by viewModel.hiddenNativeWidgets.collectAsStateWithLifecycle()
+    val swipeDownForNotifications by viewModel.swipeDownForNotifications.collectAsStateWithLifecycle()
     
     var showAddAppDialog by remember { mutableStateOf(false) }
     var showWeatherPicker by remember { mutableStateOf(false) }
@@ -482,12 +484,70 @@ fun SettingsScreen(
             }
 
             item {
+                SettingsToggleItem(
+                    title = "Swipe Down for Notifications",
+                    subtitle = "Pull down on home screen to open notification panel",
+                    icon = Icons.Rounded.Notifications,
+                    checked = swipeDownForNotifications,
+                    tileOpacity = tileOpacity,
+                    onCheckedChange = { viewModel.setSwipeDownForNotifications(it) }
+                )
+            }
+
+            item {
                 SettingsClickableItem(
                     title = "Page Manager",
                     subtitle = "Manage home screen pages and their order",
                     icon = Icons.Rounded.Layers,
                     tileOpacity = tileOpacity,
                     onClick = { showPageManager = true }
+                )
+            }
+
+            item {
+                Spacer(modifier = Modifier.height(24.dp))
+                Box(
+                    modifier = Modifier
+                        .padding(vertical = 12.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f))
+                        .padding(horizontal = 20.dp, vertical = 10.dp)
+                ) {
+                    Text(
+                        "Manage Widgets",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Black,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                }
+            }
+
+            val nativeWidgets = listOf(
+                "clock_weather" to "Clock & Weather",
+                "music" to "Music Controller",
+                "photos" to "Photos Gallery",
+                "calendar" to "Calendar Events",
+                "tasks" to "To-Do List",
+                "system" to "System Toggles"
+            )
+
+            items(nativeWidgets) { (id, name) ->
+                val isVisible = !hiddenNativeWidgets.contains(id)
+                SettingsToggleItem(
+                    title = name,
+                    subtitle = if (isVisible) "Visible on board/desktop" else "Hidden from launcher",
+                    icon = when(id) {
+                        "clock_weather" -> Icons.Rounded.WbSunny
+                        "music" -> Icons.Rounded.MusicNote
+                        "photos" -> Icons.Rounded.PhotoLibrary
+                        "calendar" -> Icons.Rounded.CalendarMonth
+                        "tasks" -> Icons.Rounded.CheckCircle
+                        "system" -> Icons.Rounded.SettingsSuggest
+                        else -> Icons.Rounded.Widgets
+                    },
+                    checked = isVisible,
+                    tileOpacity = tileOpacity,
+                    onCheckedChange = { viewModel.setNativeWidgetVisibility(id, it) }
                 )
             }
 

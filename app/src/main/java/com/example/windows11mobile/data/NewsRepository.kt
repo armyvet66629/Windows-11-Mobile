@@ -48,38 +48,7 @@ class RealNewsRepository(private val apiKey: String?) : NewsRepository {
         }
     }
 
-    private fun getMockArticles(): List<NewsArticle> {
-        val calendar = Calendar.getInstance()
-        val today = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).format(calendar.time)
-        val hour = calendar.get(Calendar.HOUR_OF_DAY)
-        
-        return listOf(
-            NewsArticle(
-                title = "Microsoft Surface Duo 3: New Leaks Suggest Major Design Shift",
-                description = "Internal sources claim Microsoft is moving towards a more traditional foldable screen for its next mobile device.",
-                url = "https://microsoft.com/surface/1",
-                urlToImage = "https://images.unsplash.com/photo-1633419461186-7d40a38105ec",
-                publishedAt = today,
-                source = NewsSource("ms", "Microsoft News")
-            ),
-            NewsArticle(
-                title = "Android 15 Features: Everything We Know So Far",
-                description = "Google's upcoming update focuses heavily on privacy and edge-to-edge app experiences.",
-                url = "https://developer.android.com/android15",
-                urlToImage = "https://images.unsplash.com/photo-1607252658945-978a91f958b9",
-                publishedAt = today,
-                source = NewsSource("google", "Android Developers")
-            ),
-            NewsArticle(
-                title = if (hour % 2 == 0) "Fluent Design: Building the Next Generation of Apps" else "Windows 11 Mobile Concept Gaining Traction",
-                description = "Developers are finding new ways to bring the Windows 11 aesthetic to portable devices.",
-                url = "https://github.com/windows11concept",
-                urlToImage = "https://images.unsplash.com/photo-1512941937669-90a1b58e7e9c",
-                publishedAt = today,
-                source = NewsSource("dev", "Dev Community")
-            )
-        )
-    }
+    private fun getMockArticles(): List<NewsArticle> = emptyList()
 }
 
 interface NewsApiService {

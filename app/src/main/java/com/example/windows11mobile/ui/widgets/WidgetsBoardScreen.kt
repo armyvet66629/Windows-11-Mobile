@@ -3,6 +3,7 @@ package com.example.windows11mobile.ui.widgets
 import android.appwidget.AppWidgetManager
 import android.content.Intent
 import android.net.Uri
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
@@ -12,6 +13,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -33,6 +36,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.layout.ContentScale
@@ -58,6 +62,7 @@ import com.example.windows11mobile.ui.news.CustomizeFeedDialog
 import com.example.windows11mobile.ui.home.WidgetHostItem
 import com.example.windows11mobile.data.TileSize
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.windows11mobile.data.MediaData
 import java.text.SimpleDateFormat
 import java.util.*
 import kotlinx.coroutines.delay
@@ -92,6 +97,10 @@ fun WidgetsBoardScreen(
     var showWidgetPicker by remember { mutableStateOf(false) }
     var pendingWidgetInfo by remember { mutableStateOf<android.appwidget.AppWidgetProviderInfo?>(null) }
     var pendingWidgetId by remember { mutableIntStateOf(-1) }
+
+    // Reordering State
+    var draggingId by remember { mutableStateOf<String?>(null) }
+    var draggingIndex by remember { mutableIntStateOf(-1) }
     
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -359,7 +368,7 @@ fun WidgetsBoardScreen(
                     }
 
                     // Widgets List Content
-                    items(boardWidgets, key = { it.id }) { item ->
+                    itemsIndexed(boardWidgets, key = { _, it -> it.id }) { index, item ->
                         val surfaceAlpha = if (item.isWidget) 0f else 0.4f
                         val surfaceEffect = if (item.isWidget) FluentEffect.MICA else FluentEffect.ACRYLIC
                         
@@ -371,7 +380,18 @@ fun WidgetsBoardScreen(
                             else -> 240.dp
                         }
 
-                        Box(modifier = Modifier.fillMaxWidth()) {
+                        val isDragging = draggingId == item.id
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .animateItem()
+                                .graphicsLayer {
+                                    alpha = if (isDragging) 0.5f else 1.0f
+                                    scaleX = if (isDragging) 1.02f else 1.0f
+                                    scaleY = if (isDragging) 1.02f else 1.0f
+                                }
+                        ) {
                             // Container for widget/card content - Remove background for widgets
                             Box(
                                 modifier = Modifier
@@ -407,6 +427,51 @@ fun WidgetsBoardScreen(
                             }
 
                             if (isEditMode) {
+                                // Reorder Handle (Center)
+                                var accumulatedDrag by remember { mutableFloatStateOf(0f) }
+                                Box(
+                                    modifier = Modifier
+                                        .matchParentSize()
+                                        .pointerInput(item.id) {
+                                            detectDragGesturesAfterLongPress(
+                                                onDragStart = { 
+                                                    draggingId = item.id 
+                                                    draggingIndex = index
+                                                    accumulatedDrag = 0f
+                                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                },
+                                                onDragEnd = { 
+                                                    draggingId = null
+                                                    draggingIndex = -1
+                                                    accumulatedDrag = 0f
+                                                },
+                                                onDragCancel = { 
+                                                    draggingId = null
+                                                    draggingIndex = -1
+                                                    accumulatedDrag = 0f
+                                                },
+                                                onDrag = { change, dragAmount ->
+                                                    change.consume()
+                                                    accumulatedDrag += dragAmount.y
+                                                    
+                                                    // Vertical reordering logic
+                                                    val threshold = 150f // Pivot point distance
+                                                    if (accumulatedDrag > threshold && draggingIndex < boardWidgets.size - 1) {
+                                                        newsViewModel.moveBoardWidget(draggingIndex, draggingIndex + 1)
+                                                        draggingIndex++
+                                                        accumulatedDrag = 0f
+                                                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                    } else if (accumulatedDrag < -threshold && draggingIndex > 0) {
+                                                        newsViewModel.moveBoardWidget(draggingIndex, draggingIndex - 1)
+                                                        draggingIndex--
+                                                        accumulatedDrag = 0f
+                                                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                    }
+                                                }
+                                            )
+                                        }
+                                )
+
                                 // Resize Button (Top Right)
                                 Box(
                                     modifier = Modifier
@@ -535,7 +600,7 @@ private fun BoardContent(
     item: com.example.windows11mobile.data.HomeTile,
     itemHeight: androidx.compose.ui.unit.Dp,
     newsViewModel: NewsFeedViewModel,
-    currentMedia: com.example.windows11mobile.data.MediaData,
+    currentMedia: MediaData?,
     calendarEvents: List<com.example.windows11mobile.data.CalendarEvent>,
     tasks: List<com.example.windows11mobile.ui.news.TodoTask>,
     appWidgetHost: android.appwidget.AppWidgetHost,
@@ -560,7 +625,122 @@ private fun BoardContent(
                 onClear = { newsViewModel.clearTasks() }
             )
             item.specialType == "photos" -> PhotosBoardWidget(recentPhotos)
+            item.specialType == "system" -> SystemBoardWidget()
         }
+    }
+}
+
+@Composable
+fun SystemBoardWidget() {
+    val context = LocalContext.current
+    
+    var brightness by remember { mutableStateOf(0.5f) }
+
+    Column(modifier = Modifier.fillMaxWidth().padding(20.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Rounded.SettingsSuggest, 
+                contentDescription = null, 
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                "System Settings",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Black,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+        
+        Spacer(modifier = Modifier.height(20.dp))
+        
+        // Toggles Row
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            SystemToggle(
+                icon = Icons.Rounded.Wifi,
+                label = "WiFi",
+                enabled = true,
+                onClick = { 
+                    try {
+                        context.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    } catch (e: Exception) {}
+                }
+            )
+            SystemToggle(
+                icon = Icons.Rounded.Bluetooth,
+                label = "Bluetooth",
+                enabled = true,
+                onClick = { 
+                    try {
+                        context.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    } catch (e: Exception) {}
+                }
+            )
+            SystemToggle(
+                icon = Icons.Rounded.FlashlightOn,
+                label = "Flash",
+                enabled = false,
+                onClick = { 
+                    // Toggling flashlight requires CameraManager
+                }
+            )
+        }
+        
+        Spacer(modifier = Modifier.height(24.dp))
+        
+        // Brightness Slider
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Rounded.LightMode, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+            Spacer(modifier = Modifier.width(12.dp))
+            Slider(
+                value = brightness,
+                onValueChange = { brightness = it },
+                modifier = Modifier.weight(1f),
+                colors = SliderDefaults.colors(
+                    thumbColor = MaterialTheme.colorScheme.primary,
+                    activeTrackColor = MaterialTheme.colorScheme.primary
+                )
+            )
+        }
+    }
+}
+
+@Composable
+private fun SystemToggle(
+    icon: ImageVector,
+    label: String,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            modifier = Modifier
+                .size(56.dp)
+                .clip(CircleShape)
+                .background(
+                    if (enabled) MaterialTheme.colorScheme.primary 
+                    else Color.White.copy(alpha = 0.05f)
+                )
+                .clickable(onClick = onClick),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = if (enabled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(24.dp)
+            )
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+        )
     }
 }
 
@@ -752,7 +932,7 @@ fun TasksWidget(
 
 @Composable
 fun MusicBoardWidget(
-    media: com.example.windows11mobile.data.MediaData,
+    media: MediaData?,
     onPlayPause: () -> Unit,
     onSkipNext: () -> Unit,
     onSkipPrevious: () -> Unit,
@@ -764,7 +944,7 @@ fun MusicBoardWidget(
             .height(240.dp)
     ) {
         // Album Art Background
-        if (media.albumArt != null) {
+        if (media?.albumArt != null) {
             androidx.compose.foundation.Image(
                 bitmap = media.albumArt.asImageBitmap(),
                 contentDescription = null,
@@ -807,7 +987,7 @@ fun MusicBoardWidget(
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(
-                    if (media.isPlaying) "NOW PLAYING" else "MUSIC",
+                    if (media?.isPlaying == true) "NOW PLAYING" else "MUSIC",
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Black,
                     color = MaterialTheme.colorScheme.primary,
@@ -817,7 +997,7 @@ fun MusicBoardWidget(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            if (media.title != null) {
+            if (media?.title != null) {
                 Text(
                     text = media.title,
                     style = MaterialTheme.typography.headlineMedium,

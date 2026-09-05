@@ -26,6 +26,8 @@ interface SettingsRepository {
     val hiddenPages: Flow<Set<String>>
     val statusBarMode: Flow<String> // "auto", "light", "dark"
     val notesJson: Flow<String?>
+    val hiddenNativeWidgets: Flow<Set<String>>
+    val swipeDownForNotifications: Flow<Boolean>
 
     suspend fun setDarkMode(isDarkMode: Boolean)
     suspend fun setWallpaperUri(uri: String)
@@ -47,6 +49,8 @@ interface SettingsRepository {
     suspend fun setHiddenPages(pages: Set<String>)
     suspend fun setStatusBarMode(mode: String)
     suspend fun setNotesJson(json: String)
+    suspend fun setNativeWidgetVisibility(id: String, visible: Boolean)
+    suspend fun setSwipeDownForNotifications(enabled: Boolean)
 
     companion object {
         val IS_DARK_MODE = booleanPreferencesKey("is_dark_mode")
@@ -65,6 +69,8 @@ interface SettingsRepository {
         val HIDDEN_PAGES = stringSetPreferencesKey("hidden_pages")
         val STATUS_BAR_MODE = stringPreferencesKey("status_bar_mode")
         val NOTES_JSON = stringPreferencesKey("notes_json")
+        val HIDDEN_NATIVE_WIDGETS = stringSetPreferencesKey("hidden_native_widgets")
+        val SWIPE_DOWN_FOR_NOTIFICATIONS = booleanPreferencesKey("swipe_down_for_notifications")
         
         val DEFAULT_PINNED_APPS = setOf(
             "com.android.settings",
@@ -147,6 +153,14 @@ class RealSettingsRepository(private val context: Context) : SettingsRepository 
 
     override val notesJson: Flow<String?> = dataStore.data.map { preferences ->
         preferences[SettingsRepository.NOTES_JSON]
+    }
+
+    override val hiddenNativeWidgets: Flow<Set<String>> = dataStore.data.map { preferences ->
+        preferences[SettingsRepository.HIDDEN_NATIVE_WIDGETS] ?: emptySet()
+    }
+
+    override val swipeDownForNotifications: Flow<Boolean> = dataStore.data.map { preferences ->
+        preferences[SettingsRepository.SWIPE_DOWN_FOR_NOTIFICATIONS] ?: true // Default to enabled
     }
 
     override suspend fun setDarkMode(isDarkMode: Boolean) {
@@ -276,6 +290,23 @@ class RealSettingsRepository(private val context: Context) : SettingsRepository 
     override suspend fun setNotesJson(json: String) {
         dataStore.edit { preferences ->
             preferences[SettingsRepository.NOTES_JSON] = json
+        }
+    }
+
+    override suspend fun setNativeWidgetVisibility(id: String, visible: Boolean) {
+        dataStore.edit { preferences ->
+            val current = preferences[SettingsRepository.HIDDEN_NATIVE_WIDGETS] ?: emptySet()
+            if (visible) {
+                preferences[SettingsRepository.HIDDEN_NATIVE_WIDGETS] = current - id
+            } else {
+                preferences[SettingsRepository.HIDDEN_NATIVE_WIDGETS] = current + id
+            }
+        }
+    }
+
+    override suspend fun setSwipeDownForNotifications(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[SettingsRepository.SWIPE_DOWN_FOR_NOTIFICATIONS] = enabled
         }
     }
 }

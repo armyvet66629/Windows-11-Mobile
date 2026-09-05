@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.pm.LauncherApps
 import android.content.pm.ShortcutInfo
 import android.os.Build
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -132,8 +133,8 @@ class HomeViewModel(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     private val _rawTiles = MutableStateFlow<List<HomeTile>>(emptyList())
-    val tiles = combine(_rawTiles, NotificationManager.notifications) { tiles, notifications ->
-        tiles.map { tile ->
+    val tiles = combine(_rawTiles, NotificationManager.notifications, settingsRepository.hiddenNativeWidgets) { tiles, notifications, hidden ->
+        tiles.filter { it.specialType == null || !hidden.contains(it.specialType) }.map { tile ->
             val appNotification = notifications[tile.packageName]
             val lastNotification = appNotification?.recentNotifications?.firstOrNull()
             tile.copy(
@@ -177,6 +178,12 @@ class HomeViewModel(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
         false
+    )
+
+    val swipeDownForNotifications = settingsRepository.swipeDownForNotifications.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        true
     )
 
     init {
@@ -623,6 +630,17 @@ class HomeViewModel(
     }
 
     fun refreshNotifications() {
+    }
+
+    fun expandNotifications() {
+        try {
+            val statusBarService = context.getSystemService("statusbar")
+            val statusBarManager = Class.forName("android.app.StatusBarManager")
+            val expandMethod = statusBarManager.getMethod("expandNotificationsPanel")
+            expandMethod.invoke(statusBarService)
+        } catch (e: Exception) {
+            Log.e("HomeViewModel", "Failed to expand notifications", e)
+        }
     }
 
     companion object {

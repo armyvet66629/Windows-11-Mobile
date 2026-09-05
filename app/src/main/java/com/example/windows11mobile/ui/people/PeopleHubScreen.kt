@@ -133,7 +133,6 @@ fun PeopleHubScreen(
                         Button(
                             onClick = { 
                                 viewModel.refresh()
-                                android.widget.Toast.makeText(context, "Refreshing Activity...", android.widget.Toast.LENGTH_SHORT).show()
                             }, 
                             modifier = Modifier.padding(top = 8.dp)
                         ) {
