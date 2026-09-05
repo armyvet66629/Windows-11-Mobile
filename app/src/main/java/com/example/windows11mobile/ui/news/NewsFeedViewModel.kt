@@ -126,9 +126,14 @@ class NewsFeedViewModel(
                         var decoded: List<HomeTile> = Json.decodeFromString(json)
                         var changed = false
                         
-                        // Migration: Add music widget if missing
-                        if (!decoded.any { it.specialType == "music" }) {
+                        // Migration: Add music widget if missing or move to top
+                        val musicWidget = decoded.find { it.specialType == "music" }
+                        if (musicWidget == null) {
                             decoded = listOf(HomeTile("music_widget", null, "Music", TileSize.WIDE, specialType = "music")) + decoded
+                            changed = true
+                        } else if (decoded.indexOf(musicWidget) != 0) {
+                            // Move existing music widget to top if requested
+                            decoded = listOf(musicWidget) + decoded.filter { it.specialType != "music" }
                             changed = true
                         }
                         

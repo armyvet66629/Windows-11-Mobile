@@ -938,10 +938,42 @@ fun MusicBoardWidget(
     onSkipPrevious: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     Box(
         modifier = modifier
             .fillMaxWidth()
             .height(240.dp)
+            .clickable {
+                media?.packageName?.let { pkg ->
+                    try {
+                        val intent = context.packageManager.getLaunchIntentForPackage(pkg)
+                        if (intent != null) {
+                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            context.startActivity(intent)
+                        }
+                    } catch (e: Exception) {}
+                } ?: run {
+                    // Fallback to general audio intent or common music apps
+                    try {
+                        val intent = Intent(Intent.ACTION_MAIN).apply {
+                            addCategory(Intent.CATEGORY_APP_MUSIC)
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        context.startActivity(intent)
+                    } catch (e: Exception) {
+                        // Last resort fallbacks
+                        val commonApps = listOf("com.google.android.apps.youtube.music", "com.spotify.music")
+                        for (app in commonApps) {
+                            val intent = context.packageManager.getLaunchIntentForPackage(app)
+                            if (intent != null) {
+                                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                context.startActivity(intent)
+                                break
+                            }
+                        }
+                    }
+                }
+            }
     ) {
         // Album Art Background
         if (media?.albumArt != null) {
