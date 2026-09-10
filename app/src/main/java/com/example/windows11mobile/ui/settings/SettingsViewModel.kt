@@ -58,6 +58,9 @@ class SettingsViewModel(
     val swipeDownForNotifications: StateFlow<Boolean> = repository.swipeDownForNotifications
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 
+    val showMoreTiles: StateFlow<Boolean> = repository.showMoreTiles
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
     val rssFeeds: StateFlow<Set<String>> = repository.rssFeeds
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
 
@@ -163,6 +166,12 @@ class SettingsViewModel(
     fun setSwipeDownForNotifications(enabled: Boolean) {
         viewModelScope.launch {
             repository.setSwipeDownForNotifications(enabled)
+        }
+    }
+
+    fun setShowMoreTiles(enabled: Boolean) {
+        viewModelScope.launch {
+            repository.setShowMoreTiles(enabled)
         }
     }
 

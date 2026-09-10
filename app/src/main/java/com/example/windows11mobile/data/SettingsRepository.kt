@@ -28,6 +28,7 @@ interface SettingsRepository {
     val notesJson: Flow<String?>
     val hiddenNativeWidgets: Flow<Set<String>>
     val swipeDownForNotifications: Flow<Boolean>
+    val showMoreTiles: Flow<Boolean>
 
     suspend fun setDarkMode(isDarkMode: Boolean)
     suspend fun setWallpaperUri(uri: String)
@@ -51,6 +52,7 @@ interface SettingsRepository {
     suspend fun setNotesJson(json: String)
     suspend fun setNativeWidgetVisibility(id: String, visible: Boolean)
     suspend fun setSwipeDownForNotifications(enabled: Boolean)
+    suspend fun setShowMoreTiles(enabled: Boolean)
 
     companion object {
         val IS_DARK_MODE = booleanPreferencesKey("is_dark_mode")
@@ -71,6 +73,7 @@ interface SettingsRepository {
         val NOTES_JSON = stringPreferencesKey("notes_json")
         val HIDDEN_NATIVE_WIDGETS = stringSetPreferencesKey("hidden_native_widgets")
         val SWIPE_DOWN_FOR_NOTIFICATIONS = booleanPreferencesKey("swipe_down_for_notifications")
+        val SHOW_MORE_TILES = booleanPreferencesKey("show_more_tiles")
         
         val DEFAULT_PINNED_APPS = setOf(
             "com.android.settings",
@@ -161,6 +164,10 @@ class RealSettingsRepository(private val context: Context) : SettingsRepository 
 
     override val swipeDownForNotifications: Flow<Boolean> = dataStore.data.map { preferences ->
         preferences[SettingsRepository.SWIPE_DOWN_FOR_NOTIFICATIONS] ?: true // Default to enabled
+    }
+
+    override val showMoreTiles: Flow<Boolean> = dataStore.data.map { preferences ->
+        preferences[SettingsRepository.SHOW_MORE_TILES] ?: false
     }
 
     override suspend fun setDarkMode(isDarkMode: Boolean) {
@@ -307,6 +314,12 @@ class RealSettingsRepository(private val context: Context) : SettingsRepository 
     override suspend fun setSwipeDownForNotifications(enabled: Boolean) {
         dataStore.edit { preferences ->
             preferences[SettingsRepository.SWIPE_DOWN_FOR_NOTIFICATIONS] = enabled
+        }
+    }
+
+    override suspend fun setShowMoreTiles(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[SettingsRepository.SHOW_MORE_TILES] = enabled
         }
     }
 }

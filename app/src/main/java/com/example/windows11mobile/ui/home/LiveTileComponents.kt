@@ -2,6 +2,7 @@ package com.example.windows11mobile.ui.home
 
 import android.content.Intent
 import android.net.Uri
+import android.provider.AlarmClock
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Image
@@ -123,78 +124,98 @@ fun ClockWeatherTileContent(
     }
 
     val timeFormat = SimpleDateFormat("h:mm", Locale.getDefault())
-    val dateFormat = SimpleDateFormat("EEEE, MMMM d", Locale.getDefault())
+    val fullDateFormat = SimpleDateFormat("EEEE, MMMM d", Locale.getDefault())
+    val shortDateFormat = SimpleDateFormat("EEE, MMM d", Locale.getDefault())
 
-    Row(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        verticalAlignment = Alignment.Bottom,
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Column(
-            modifier = Modifier.weight(1f)
-        ) {
-            Text(
-                text = timeFormat.format(currentTime),
-                style = MaterialTheme.typography.displayLarge.copy(fontSize = 72.sp),
-                fontWeight = FontWeight.W300,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.clickable {
-                    try {
-                        context.startActivity(Intent(android.provider.AlarmClock.ACTION_SHOW_ALARMS))
-                    } catch (e: Exception) {
-                        val intent = context.packageManager.getLaunchIntentForPackage("com.android.deskclock")
-                            ?: context.packageManager.getLaunchIntentForPackage("com.android.deskclock")
-                        if (intent != null) context.startActivity(intent)
-                    }
-                }
-            )
-            Text(
-                text = dateFormat.format(currentTime),
-                style = MaterialTheme.typography.titleLarge.copy(fontSize = 18.sp),
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.clickable {
-                    try {
-                        val intent = Intent(Intent.ACTION_VIEW).setData(
-                            Uri.parse("content://com.android.calendar/time/")
-                        )
-                        context.startActivity(intent)
-                    } catch (e: Exception) {
-                        val intent = context.packageManager.getLaunchIntentForPackage("com.google.android.calendar")
-                            ?: context.packageManager.getLaunchIntentForPackage("com.android.calendar")
-                        if (intent != null) context.startActivity(intent)
-                    }
-                }
-            )
-        }
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val isSmallWidth = maxWidth < 280.dp // Increased threshold
+        val horizontalPadding = if (isSmallWidth) 8.dp else 16.dp
+        val dateFormat = if (isSmallWidth) shortDateFormat else fullDateFormat
         
-        Column(
-            horizontalAlignment = Alignment.End,
+        Row(
             modifier = Modifier
-                .clickable { onWeatherClick() }
-                .padding(bottom = 20.dp) // Move info higher
+                .fillMaxSize()
+                .padding(horizontalPadding),
+            verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            val (icon, color) = getWeatherInfo(weatherData?.condition ?: "Unknown")
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                modifier = Modifier.size(48.dp),
-                tint = color
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "${weatherData?.temperature?.toInt() ?: "--"}° ${weatherData?.condition ?: "Loading..."}",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = weatherData?.locationName ?: "Waiting for location...",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-            )
+            Column(
+                modifier = Modifier.weight(1f).padding(bottom = if (isSmallWidth) 4.dp else horizontalPadding)
+            ) {
+                Text(
+                    text = timeFormat.format(currentTime),
+                    style = MaterialTheme.typography.displayLarge.copy(
+                        fontSize = if (isSmallWidth) 42.sp else 64.sp
+                    ),
+                    fontWeight = FontWeight.W300,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    softWrap = false,
+                    modifier = Modifier.clickable {
+                        try {
+                            context.startActivity(Intent(AlarmClock.ACTION_SHOW_ALARMS))
+                        } catch (e: Exception) {
+                            val intent = context.packageManager.getLaunchIntentForPackage("com.android.deskclock")
+                                ?: context.packageManager.getLaunchIntentForPackage("com.android.deskclock")
+                            if (intent != null) context.startActivity(intent)
+                        }
+                    }
+                )
+                Text(
+                    text = dateFormat.format(currentTime),
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontSize = if (isSmallWidth) 13.sp else 16.sp
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
+                    fontWeight = FontWeight.Normal, // Removed Bold
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    softWrap = false,
+                    modifier = Modifier.clickable {
+                        try {
+                            val intent = Intent(Intent.ACTION_VIEW).setData(
+                                Uri.parse("content://com.android.calendar/time/")
+                            )
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            val intent = context.packageManager.getLaunchIntentForPackage("com.google.android.calendar")
+                                ?: context.packageManager.getLaunchIntentForPackage("com.android.calendar")
+                            if (intent != null) context.startActivity(intent)
+                        }
+                    }
+                )
+            }
+            
+            Column(
+                horizontalAlignment = Alignment.End,
+                modifier = Modifier
+                    .clickable { onWeatherClick() }
+                    .padding(bottom = horizontalPadding + 4.dp)
+            ) {
+                val (icon, color) = getWeatherInfo(weatherData?.condition ?: "Unknown")
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(if (isSmallWidth) 32.dp else 40.dp),
+                    tint = color
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "${weatherData?.temperature?.toInt() ?: "--"}°",
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontSize = if (isSmallWidth) 18.sp else 22.sp
+                    ),
+                    fontWeight = FontWeight.Black,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                if (!isSmallWidth) {
+                    Text(
+                        text = weatherData?.condition ?: "Loading...",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                        maxLines = 1
+                    )
+                }
+            }
         }
     }
 }
@@ -630,18 +651,20 @@ fun FlippingTileContainer(
 fun PeopleTileBack(contacts: List<Contact>) {
     val favorites = remember(contacts) { contacts.filter { it.isStarred }.take(9) }
     
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(8.dp),
+    BoxWithConstraints(
+        modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
+        val isSmall = maxWidth < 150.dp
+        val padding = if (isSmall) 4.dp else 8.dp
+        val spacing = if (isSmall) 2.dp else 4.dp
+        
         LazyVerticalGrid(
             columns = GridCells.Fixed(3),
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().padding(padding),
             userScrollEnabled = false,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            horizontalArrangement = Arrangement.spacedBy(spacing),
+            verticalArrangement = Arrangement.spacedBy(spacing)
         ) {
             items(favorites) { contact ->
                 Box(
@@ -661,7 +684,7 @@ fun PeopleTileBack(contacts: List<Contact>) {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Text(
                                 text = contact.name.firstOrNull()?.toString() ?: "?",
-                                style = MaterialTheme.typography.labelSmall,
+                                style = if (isSmall) MaterialTheme.typography.labelSmall else MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary
                             )
@@ -689,7 +712,10 @@ fun MusicLiveTile(
         }
     }
     
-    Box(modifier = Modifier.fillMaxSize()) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val isSmallWidth = maxWidth < 200.dp
+        val padding = if (isSmallWidth) 8.dp else 12.dp
+
         if (media?.albumArt != null) {
             Image(
                 bitmap = media.albumArt.asImageBitmap(),
@@ -707,32 +733,34 @@ fun MusicLiveTile(
         }
 
         Column(
-            modifier = Modifier.fillMaxSize().padding(12.dp)
+            modifier = Modifier.fillMaxSize().padding(padding)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 FluentIcon(
                     imageVector = Icons.Rounded.MusicNote,
                     contentDescription = null,
-                    size = 18.dp,
+                    size = if (isSmallWidth) 14.dp else 18.dp,
                     tint = brandingColor
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = if (media?.isPlaying == true) "NOW PLAYING" else tile.label.uppercase(),
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = if (isSmallWidth) 8.sp else 10.sp
+                    ),
                     fontWeight = FontWeight.Black,
                     color = brandingColor,
                     letterSpacing = 1.2.sp
                 )
             }
             
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(if (isSmallWidth) 8.dp else 12.dp))
             
             if (media != null && media.title != null) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = media.title,
-                        style = MaterialTheme.typography.titleMedium,
+                        style = if (isSmallWidth) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -742,7 +770,8 @@ fun MusicLiveTile(
                         text = media.artist ?: "Unknown Artist",
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.White.copy(alpha = 0.8f),
-                        maxLines = 1
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
 
@@ -752,13 +781,13 @@ fun MusicLiveTile(
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        IconButton(onClick = onSkipPrevious) {
+                        IconButton(onClick = onSkipPrevious, modifier = Modifier.size(if (isSmallWidth) 32.dp else 48.dp)) {
                             Icon(Icons.Rounded.SkipPrevious, contentDescription = null, tint = Color.White)
                         }
                         IconButton(
                             onClick = onPlayPause,
                             modifier = Modifier
-                                .size(48.dp)
+                                .size(if (isSmallWidth) 40.dp else 48.dp)
                                 .clip(CircleShape)
                                 .background(Color.White.copy(alpha = 0.1f))
                         ) {
@@ -766,10 +795,10 @@ fun MusicLiveTile(
                                 imageVector = if (media.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                                 contentDescription = null,
                                 tint = Color.White,
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.size(if (isSmallWidth) 24.dp else 32.dp)
                             )
                         }
-                        IconButton(onClick = onSkipNext) {
+                        IconButton(onClick = onSkipNext, modifier = Modifier.size(if (isSmallWidth) 32.dp else 48.dp)) {
                             Icon(Icons.Rounded.SkipNext, contentDescription = null, tint = Color.White)
                         }
                     }
@@ -783,51 +812,59 @@ fun MusicLiveTile(
 
 @Composable
 fun SettingsLiveTile(tile: HomeTile) {
-    Column(
-        modifier = Modifier.fillMaxSize().padding(12.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            FluentIcon(
-                imageVector = FluentIcons.Settings,
-                contentDescription = null,
-                size = 18.dp,
-                tint = MaterialTheme.colorScheme.primary
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = "QUICK SETTINGS",
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Black,
-                color = MaterialTheme.colorScheme.primary,
-                letterSpacing = 1.2.sp
-            )
-        }
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val isSmallWidth = maxWidth < 200.dp
+        val horizontalPadding = if (isSmallWidth) 8.dp else 12.dp
         
-        Spacer(modifier = Modifier.height(12.dp))
-        
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
+        Column(
+            modifier = Modifier.fillMaxSize().padding(horizontalPadding)
         ) {
-            QuickToggle(icon = Icons.Rounded.Wifi, enabled = true, onClick = { })
-            QuickToggle(icon = Icons.Rounded.Bluetooth, enabled = true, onClick = { })
-            QuickToggle(icon = Icons.Rounded.FlashlightOn, enabled = false, onClick = { })
-        }
-        
-        if (tile.size == TileSize.WIDE || tile.size == TileSize.LARGE) {
-            Spacer(modifier = Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                FluentIcon(
+                    imageVector = FluentIcons.Settings,
+                    contentDescription = null,
+                    size = if (isSmallWidth) 14.dp else 18.dp,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "QUICK SETTINGS",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = if (isSmallWidth) 8.sp else 10.sp
+                    ),
+                    fontWeight = FontWeight.Black,
+                    color = MaterialTheme.colorScheme.primary,
+                    letterSpacing = 1.2.sp
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(if (isSmallWidth) 8.dp else 12.dp))
+            
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                QuickToggle(icon = Icons.AutoMirrored.Rounded.AirplaneTicket, enabled = false, onClick = { })
-                QuickToggle(icon = Icons.Rounded.ScreenRotation, enabled = true, onClick = { })
-                QuickToggle(
-                    icon = Icons.Rounded.BrightnessAuto, 
-                    enabled = true, 
-                    onClick = { },
-                    modifier = Modifier.weight(1f)
-                )
+                QuickToggle(icon = Icons.Rounded.Wifi, enabled = true, isSmall = isSmallWidth, onClick = { })
+                QuickToggle(icon = Icons.Rounded.Bluetooth, enabled = true, isSmall = isSmallWidth, onClick = { })
+                QuickToggle(icon = Icons.Rounded.FlashlightOn, enabled = false, isSmall = isSmallWidth, onClick = { })
+            }
+            
+            if (tile.size == TileSize.WIDE || tile.size == TileSize.LARGE) {
+                Spacer(modifier = Modifier.height(if (isSmallWidth) 4.dp else 8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    QuickToggle(icon = Icons.AutoMirrored.Rounded.AirplaneTicket, enabled = false, isSmall = isSmallWidth, onClick = { })
+                    QuickToggle(icon = Icons.Rounded.ScreenRotation, enabled = true, isSmall = isSmallWidth, onClick = { })
+                    QuickToggle(
+                        icon = Icons.Rounded.BrightnessAuto, 
+                        enabled = true, 
+                        isSmall = isSmallWidth,
+                        onClick = { },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
         }
     }
@@ -837,14 +874,16 @@ fun SettingsLiveTile(tile: HomeTile) {
 fun QuickToggle(
     icon: ImageVector,
     enabled: Boolean,
+    isSmall: Boolean = false,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val size = if (isSmall) 36.dp else 48.dp
     IconButton(
         onClick = onClick,
         modifier = modifier
-            .height(48.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .size(size)
+            .clip(RoundedCornerShape(if (isSmall) 8.dp else 12.dp))
             .background(
                 if (enabled) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
                 else Color.White.copy(alpha = 0.05f)
@@ -853,6 +892,7 @@ fun QuickToggle(
         Icon(
             icon,
             contentDescription = null,
+            modifier = Modifier.size(if (isSmall) 18.dp else 24.dp),
             tint = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
         )
     }
@@ -874,66 +914,73 @@ fun LiveTileList(
         }
     }
 
-    Column(
-        modifier = Modifier.fillMaxSize().padding(12.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            FluentIcon(
-                imageVector = icon,
-                contentDescription = null,
-                size = 18.dp,
-                tint = headerColor
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = tile.label.uppercase(),
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Black,
-                letterSpacing = 1.2.sp,
-                color = headerColor
-            )
-        }
-        
-        Spacer(modifier = Modifier.height(12.dp))
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val isSmallWidth = maxWidth < 200.dp
+        val padding = if (isSmallWidth) 8.dp else 12.dp
 
-        AnimatedContent(
-            targetState = items[currentIndex],
-            transitionSpec = {
-                (slideInVertically { it } + fadeIn()) togetherWith (slideOutVertically { -it } + fadeOut())
-            },
-            label = "liveTileTransition"
-        ) { (title, subtitle, photo) ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (photo != null) {
-                    AsyncImage(
-                        model = photo,
-                        contentDescription = null,
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape),
-                        contentScale = ContentScale.Crop
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                }
-                Column {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = subtitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.7f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+        Column(
+            modifier = Modifier.fillMaxSize().padding(padding)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                FluentIcon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    size = if (isSmallWidth) 14.dp else 18.dp,
+                    tint = headerColor
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = tile.label.uppercase(),
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = if (isSmallWidth) 8.sp else 10.sp
+                    ),
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 1.2.sp,
+                    color = headerColor
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(if (isSmallWidth) 8.dp else 12.dp))
+
+            AnimatedContent(
+                targetState = items[currentIndex % items.size],
+                transitionSpec = {
+                    (slideInVertically { it } + fadeIn()) togetherWith (slideOutVertically { -it } + fadeOut())
+                },
+                label = "liveTileTransition"
+            ) { (title, subtitle, photo) ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (photo != null) {
+                        AsyncImage(
+                            model = photo,
+                            contentDescription = null,
+                            modifier = Modifier
+                                .size(if (isSmallWidth) 32.dp else 40.dp)
+                                .clip(CircleShape),
+                            contentScale = ContentScale.Crop
+                        )
+                        Spacer(modifier = Modifier.width(if (isSmallWidth) 8.dp else 12.dp))
+                    }
+                    Column {
+                        Text(
+                            text = title,
+                            style = if (isSmallWidth) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = subtitle,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White.copy(alpha = 0.7f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
         }
@@ -955,7 +1002,10 @@ fun YouTubeLiveTile(
     val displayArtist = if (isYouTubeMedia) media!!.artist else recentNotifications.firstOrNull()?.sender
     val albumArt = if (isYouTubeMedia) media!!.albumArt else null
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val isSmallWidth = maxWidth < 200.dp
+        val padding = if (isSmallWidth) 8.dp else 12.dp
+
         if (albumArt != null) {
             Image(
                 bitmap = albumArt.asImageBitmap(),
@@ -973,32 +1023,34 @@ fun YouTubeLiveTile(
         }
 
         Column(
-            modifier = Modifier.fillMaxSize().padding(12.dp)
+            modifier = Modifier.fillMaxSize().padding(padding)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     imageVector = Icons.Rounded.PlayCircle,
                     contentDescription = null,
-                    modifier = Modifier.size(18.dp),
+                    modifier = Modifier.size(if (isSmallWidth) 14.dp else 18.dp),
                     tint = Color.Red
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = if (isPlaying) "NOW PLAYING" else "YOUTUBE",
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = if (isSmallWidth) 8.sp else 10.sp
+                    ),
                     fontWeight = FontWeight.Black,
                     color = Color.Red,
                     letterSpacing = 1.2.sp
                 )
             }
             
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(if (isSmallWidth) 8.dp else 12.dp))
             
             if (displayTitle != null) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = displayTitle,
-                        style = MaterialTheme.typography.titleMedium,
+                        style = if (isSmallWidth) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         maxLines = if (tile.size == TileSize.LARGE) 4 else 2,
                         overflow = TextOverflow.Ellipsis,
@@ -1021,13 +1073,13 @@ fun YouTubeLiveTile(
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        IconButton(onClick = onSkipPrevious) {
+                        IconButton(onClick = onSkipPrevious, modifier = Modifier.size(if (isSmallWidth) 32.dp else 48.dp)) {
                             Icon(Icons.Rounded.SkipPrevious, contentDescription = null, tint = Color.White)
                         }
                         IconButton(
                             onClick = onPlayPause,
                             modifier = Modifier
-                                .size(48.dp)
+                                .size(if (isSmallWidth) 40.dp else 48.dp)
                                 .clip(CircleShape)
                                 .background(Color.White.copy(alpha = 0.1f))
                         ) {
@@ -1035,10 +1087,10 @@ fun YouTubeLiveTile(
                                 imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                                 contentDescription = null,
                                 tint = Color.White,
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.size(if (isSmallWidth) 24.dp else 32.dp)
                             )
                         }
-                        IconButton(onClick = onSkipNext) {
+                        IconButton(onClick = onSkipNext, modifier = Modifier.size(if (isSmallWidth) 32.dp else 48.dp)) {
                             Icon(Icons.Rounded.SkipNext, contentDescription = null, tint = Color.White)
                         }
                     }
@@ -1143,27 +1195,34 @@ fun DateBackSide() {
     val monthFormat = SimpleDateFormat("MMMM", Locale.getDefault())
     val weekdayFormat = SimpleDateFormat("EEEE", Locale.getDefault())
 
-    Box(
+    BoxWithConstraints(
         modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.primary.copy(alpha = 0.05f)),
         contentAlignment = Alignment.Center
     ) {
+        val isSmall = maxWidth < 150.dp
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 text = weekdayFormat.format(date).uppercase(),
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontSize = if (isSmall) 8.sp else 11.sp
+                ),
                 fontWeight = FontWeight.Black,
                 color = MaterialTheme.colorScheme.primary,
                 letterSpacing = 1.sp
             )
             Text(
                 text = dayFormat.format(date),
-                style = MaterialTheme.typography.displayMedium,
+                style = MaterialTheme.typography.displayMedium.copy(
+                    fontSize = if (isSmall) 32.sp else 48.sp
+                ),
                 fontWeight = FontWeight.W200,
                 color = MaterialTheme.colorScheme.onSurface
             )
             Text(
                 text = monthFormat.format(date),
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontSize = if (isSmall) 12.sp else 16.sp
+                ),
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
             )
@@ -1243,17 +1302,112 @@ fun FolderTileContent(tile: HomeTile) {
 
 @Composable
 fun StandardTileContent(tile: HomeTile, icon: android.graphics.drawable.Drawable?) {
-    Column(modifier = Modifier.fillMaxSize().padding(if (tile.size == TileSize.SMALL) 4.dp else 12.dp), horizontalAlignment = if (tile.size == TileSize.WIDE || tile.size == TileSize.LARGE) Alignment.Start else Alignment.CenterHorizontally, verticalArrangement = if (tile.size == TileSize.WIDE || tile.size == TileSize.LARGE) Arrangement.Top else Arrangement.Center) {
-        Box(modifier = if (tile.size == TileSize.WIDE || tile.size == TileSize.LARGE) Modifier.size(36.dp) else Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-            if (icon != null) AsyncImage(model = icon, contentDescription = null, modifier = Modifier.size(when (tile.size) { TileSize.SMALL -> 40.dp; TileSize.MEDIUM -> 72.dp; TileSize.WIDE -> 48.dp; TileSize.LARGE -> 84.dp }))
-            else FluentIcon(imageVector = when (tile.label.lowercase()) { "settings" -> FluentIcons.Settings; "calendar" -> FluentIcons.Calendar; "people" -> Icons.Rounded.Person; "messaging" -> FluentIcons.Message; "phone" -> Icons.Rounded.Phone; "camera" -> Icons.Rounded.CameraAlt; "mail", "gmail" -> FluentIcons.Mail; "maps" -> Icons.Rounded.Map; "photos" -> FluentIcons.Photos; else -> FluentIcons.Apps }, contentDescription = null, size = when (tile.size) { TileSize.SMALL -> 40.dp; TileSize.MEDIUM -> 72.dp; TileSize.WIDE -> 48.dp; TileSize.LARGE -> 84.dp }, gradient = Brush.linearGradient(colors = listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary)))
-        }
-        if (tile.size != TileSize.SMALL) {
-            if (tile.size == TileSize.WIDE || tile.size == TileSize.LARGE) {
-                Spacer(modifier = Modifier.height(8.dp)); Text(text = tile.label, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onSurface)
-                if (tile.notificationSummary != null) { Spacer(modifier = Modifier.height(4.dp)); Text(text = tile.notificationSummary, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold, maxLines = if (tile.size == TileSize.LARGE) 6 else 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface) }
-                else { Spacer(modifier = Modifier.height(4.dp)); Text(text = "No new notifications", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)) }
-            } else { Text(text = tile.label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface) }
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val isSmallWidth = maxWidth < 150.dp
+        val isTinyWidth = maxWidth < 100.dp
+        val padding = if (isSmallWidth) 6.dp else 12.dp
+        
+        Column(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            horizontalAlignment = if (tile.size == TileSize.WIDE || tile.size == TileSize.LARGE) Alignment.Start else Alignment.CenterHorizontally,
+            verticalArrangement = if (tile.size == TileSize.WIDE || tile.size == TileSize.LARGE) Arrangement.Top else Arrangement.Center
+        ) {
+            Box(
+                modifier = if (tile.size == TileSize.WIDE || tile.size == TileSize.LARGE) Modifier.size(if (isSmallWidth) 30.dp else 36.dp) 
+                           else Modifier.weight(1f).fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
+                val iconSize = when (tile.size) {
+                    TileSize.SMALL -> if (isTinyWidth) 32.dp else 40.dp
+                    TileSize.MEDIUM -> if (isSmallWidth) 56.dp else 72.dp
+                    TileSize.WIDE -> if (isSmallWidth) 40.dp else 48.dp
+                    TileSize.LARGE -> if (isSmallWidth) 64.dp else 84.dp
+                }
+                
+                if (icon != null) {
+                    AsyncImage(
+                        model = icon,
+                        contentDescription = null,
+                        modifier = Modifier.size(iconSize)
+                    )
+                } else {
+                    FluentIcon(
+                        imageVector = when (tile.label.lowercase()) {
+                            "settings" -> FluentIcons.Settings
+                            "calendar" -> FluentIcons.Calendar
+                            "people" -> Icons.Rounded.Person
+                            "messaging" -> FluentIcons.Message
+                            "phone" -> Icons.Rounded.Phone
+                            "camera" -> Icons.Rounded.CameraAlt
+                            "mail", "gmail" -> FluentIcons.Mail
+                            "maps" -> Icons.Rounded.Map
+                            "photos" -> FluentIcons.Photos
+                            else -> FluentIcons.Apps
+                        },
+                        contentDescription = null,
+                        size = iconSize,
+                        gradient = Brush.linearGradient(
+                            colors = listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary)
+                        )
+                    )
+                }
+            }
+            
+            if (tile.size != TileSize.SMALL) {
+                if (tile.size == TileSize.WIDE || tile.size == TileSize.LARGE) {
+                    Spacer(modifier = Modifier.height(if (isSmallWidth) 4.dp else 8.dp))
+                    Text(
+                        text = tile.label,
+                        style = if (isSmallWidth) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Black,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        softWrap = false
+                    )
+                    if (tile.notificationSummary != null) {
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = tile.notificationSummary,
+                            style = if (isSmallWidth) MaterialTheme.typography.labelMedium else MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = if (tile.size == TileSize.LARGE) 6 else 2,
+                            overflow = TextOverflow.Ellipsis,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    } else if (!isSmallWidth) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "No new notifications",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                        )
+                    } else {
+                        // Dense mode summary
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "No notifications",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                        )
+                    }
+                } else {
+                    Text(
+                        text = tile.label,
+                        style = if (isSmallWidth) MaterialTheme.typography.labelMedium.copy(fontSize = 11.sp) else MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                        softWrap = false,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
         }
     }
 }

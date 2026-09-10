@@ -53,6 +53,7 @@ fun SettingsScreen(
     val rssFeeds by viewModel.rssFeeds.collectAsStateWithLifecycle()
     val hiddenNativeWidgets by viewModel.hiddenNativeWidgets.collectAsStateWithLifecycle()
     val swipeDownForNotifications by viewModel.swipeDownForNotifications.collectAsStateWithLifecycle()
+    val showMoreTiles by viewModel.showMoreTiles.collectAsStateWithLifecycle()
     
     var showAddAppDialog by remember { mutableStateOf(false) }
     var showWeatherPicker by remember { mutableStateOf(false) }
@@ -491,6 +492,17 @@ fun SettingsScreen(
                     checked = swipeDownForNotifications,
                     tileOpacity = tileOpacity,
                     onCheckedChange = { viewModel.setSwipeDownForNotifications(it) }
+                )
+            }
+
+            item {
+                SettingsToggleItem(
+                    title = "Show more tiles",
+                    subtitle = "Increase home screen columns to 3 (6 units)",
+                    icon = Icons.Rounded.GridView,
+                    checked = showMoreTiles,
+                    tileOpacity = tileOpacity,
+                    onCheckedChange = { viewModel.setShowMoreTiles(it) }
                 )
             }
 

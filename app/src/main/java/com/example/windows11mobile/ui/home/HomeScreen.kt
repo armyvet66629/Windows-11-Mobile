@@ -124,10 +124,12 @@ fun HomeScreen(
     val recentPhotos by viewModel.recentPhotos.collectAsStateWithLifecycle()
     val openFolderId by viewModel.openFolderId.collectAsStateWithLifecycle()
     val isEditModeState = rememberUpdatedState(isEditMode)
+    val swipeDownEnabled by viewModel.swipeDownForNotifications.collectAsStateWithLifecycle()
+    val showMoreTiles by viewModel.showMoreTiles.collectAsStateWithLifecycle()
 
     val adaptiveInfo = currentWindowAdaptiveInfo()
     val columns = when {
-        adaptiveInfo.windowSizeClass.windowWidthSizeClass == WindowWidthSizeClass.COMPACT -> 4
+        adaptiveInfo.windowSizeClass.windowWidthSizeClass == WindowWidthSizeClass.COMPACT -> if (showMoreTiles) 6 else 4
         adaptiveInfo.windowSizeClass.windowWidthSizeClass == WindowWidthSizeClass.MEDIUM -> 6
         else -> 8
     }
@@ -336,8 +338,6 @@ fun HomeScreen(
         )
     }
 
-    val swipeDownEnabled by viewModel.swipeDownForNotifications.collectAsStateWithLifecycle()
-
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -492,8 +492,13 @@ fun HomeScreen(
                             coroutineScope {
                                 awaitEachGesture {
                                     val down = awaitFirstDown(pass = PointerEventPass.Initial)
-                                    // If we are in edit mode, consume immediately to lock out parent pager
-                                    if (isEditModeState.value) {
+                                    
+                                    // REORDER/DRAG BLOCKING
+                                    // Only consume if NOT on the resize button area (bottom right 48dp)
+                                    val isInResizeZone = down.position.x > (size.width - 48.dp.toPx()) && 
+                                                         down.position.y > (size.height - 48.dp.toPx())
+                                    
+                                    if (isEditModeState.value && !isInResizeZone) {
                                         down.consume()
                                     }
                                     
@@ -526,7 +531,7 @@ fun HomeScreen(
                                             if (isMoving) hasMovedSignificant = true
                                             
                                             if (pointer.pressed) {
-                                                if (isHoldTriggered[0] || isEditModeState.value) {
+                                                if ((isHoldTriggered[0] || isEditModeState.value) && !isInResizeZone) {
                                                     pointer.consume()
                                                     
                                                     if (!dragStarted && (isEditModeState.value || isMoving)) {
@@ -555,7 +560,11 @@ fun HomeScreen(
                                                 holdJob.cancel()
                                                 if (!dragStarted && !isHoldTriggered[0] && !hasMovedSignificant) {
                                                     // This was a click
-                                                    if (tile.isFolder) {
+                                                    if (isInResizeZone && isEditModeState.value) {
+                                                        // Explicitly handle resize if the consumer pass didn't catch it
+                                                        viewModel.resizeTile(tile.id)
+                                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                    } else if (tile.isFolder) {
                                                         folderSourceCenter = itemPosition + Offset(itemSize.width / 2f, itemSize.height / 2f)
                                                         viewModel.openFolder(tile.id)
                                                     } else if (tile.packageName != null) {
@@ -619,11 +628,7 @@ fun HomeScreen(
                             Box(modifier = Modifier.matchParentSize().zIndex(20f), contentAlignment = Alignment.BottomEnd) {
                                 Box(
                                     modifier = Modifier
-                                        .size(48.dp)
-                                        .clickable(
-                                            interactionSource = remember { MutableInteractionSource() },
-                                            indication = null
-                                        ) { viewModel.resizeTile(tile.id) },
+                                        .size(48.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Box(
@@ -1114,15 +1119,11 @@ fun HomeTileItem(
                     WidgetHostItem(widgetId = tile.widgetId, sharedHost = widgetHost, size = tile.size)
                 }
                 
-                if (isEditMode) {
+                if (isEditMode && !tile.isSpacer) {
                     Box(modifier = Modifier.matchParentSize().zIndex(20f), contentAlignment = Alignment.BottomEnd) {
                         Box(
                             modifier = Modifier
-                                .size(48.dp)
-                                .clickable(
-                                    interactionSource = remember { MutableInteractionSource() },
-                                    indication = null
-                                ) { onResize() },
+                                .size(48.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Box(

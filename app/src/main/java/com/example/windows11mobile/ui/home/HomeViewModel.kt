@@ -186,6 +186,12 @@ class HomeViewModel(
         true
     )
 
+    val showMoreTiles = settingsRepository.showMoreTiles.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        false
+    )
+
     init {
         viewModelScope.launch {
             while(true) {
