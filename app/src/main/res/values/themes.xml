@@ -1,4 +1,18 @@
 <resources>
+    <!-- Base application theme. -->
+    <style name="Theme.Windows11Mobile" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- Main window background to prevent black flash -->
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowShowWallpaper">true</item>
+    </style>
 
-    <style name="Theme.Windows11Mobile" parent="Theme.MaterialComponents.Light" />
+    <!-- Post-splash screen theme -->
+    <style name="Theme.App.Starting" parent="Theme.SplashScreen">
+        <!-- Background color of the splash screen -->
+        <item name="windowSplashScreenBackground">#000000</item>
+        <!-- Icon to display on the splash screen -->
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+        <!-- The theme of the activity after the splash screen is done -->
+        <item name="postSplashScreenTheme">@style/Theme.Windows11Mobile</item>
+    </style>
 </resources>

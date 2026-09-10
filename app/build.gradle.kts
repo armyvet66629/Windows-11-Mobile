@@ -15,8 +15,8 @@ android {
         applicationId = "com.example.windows11mobile"
         minSdk = 24
         targetSdk = 37
-        versionCode = 6
-        versionName = "1.2.0"
+        versionCode = 7
+        versionName = "1.2.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -64,6 +64,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.core.splashscreen)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.fluentui.controls)
     implementation(libs.fluentui.icons)
