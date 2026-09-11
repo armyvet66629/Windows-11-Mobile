@@ -123,6 +123,8 @@ fun HomeScreen(
     val topNews by viewModel.topNews.collectAsStateWithLifecycle()
     val recentPhotos by viewModel.recentPhotos.collectAsStateWithLifecycle()
     val openFolderId by viewModel.openFolderId.collectAsStateWithLifecycle()
+    val tilePictureEnabled by viewModel.tilePictureEnabled.collectAsStateWithLifecycle()
+    val wallpaperUri by viewModel.wallpaperUri.collectAsStateWithLifecycle()
     val isEditModeState = rememberUpdatedState(isEditMode)
     val swipeDownEnabled by viewModel.swipeDownForNotifications.collectAsStateWithLifecycle()
     val showMoreTiles by viewModel.showMoreTiles.collectAsStateWithLifecycle()
@@ -615,6 +617,8 @@ fun HomeScreen(
                             weatherAppPackage = weatherAppPackage,
                             recentPhotos = recentPhotos,
                             pointerPosition = pointerPosition,
+                            tilePictureEnabled = tilePictureEnabled,
+                            wallpaperUri = wallpaperUri,
                             onResize = { viewModel.resizeTile(tile.id) },
                             onPlayPause = { viewModel.mediaPlayPause() },
                             onSkipNext = { viewModel.mediaSkipNext() },
@@ -703,6 +707,8 @@ fun HomeScreen(
                         weatherAppPackage = weatherAppPackage,
                         recentPhotos = recentPhotos,
                         pointerPosition = pointerPosition,
+                        tilePictureEnabled = tilePictureEnabled,
+                        wallpaperUri = wallpaperUri,
                         onResize = { viewModel.resizeTile(tile.id) },
                         onPlayPause = { viewModel.mediaPlayPause() },
                         onSkipNext = { viewModel.mediaSkipNext() },
@@ -1067,6 +1073,8 @@ fun HomeTileItem(
     weatherAppPackage: String? = null,
     recentPhotos: List<android.net.Uri> = emptyList(),
     pointerPosition: Offset = Offset.Zero,
+    tilePictureEnabled: Boolean = false,
+    wallpaperUri: String? = null,
     onResize: () -> Unit = {},
     onPlayPause: () -> Unit = {},
     onSkipNext: () -> Unit = {},
@@ -1147,11 +1155,13 @@ fun HomeTileItem(
             }
         } else {
             Box {
+                val surfaceAlpha = if (tilePictureEnabled) 0.15f else tileOpacity
+                
                 FluentSurface(
                     modifier = Modifier.aspectRatio(ratio)
                         .scale(if (isHovered) 1.1f else 1.0f)
                         .then(if (isHovered) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp)) else Modifier),
-                    alpha = tileOpacity,
+                    alpha = surfaceAlpha,
                     effect = FluentEffect.ACRYLIC,
                     blurRadius = if (tile.specialType != null || tile.notificationSender != null) 240 else 120,
                     tintColor = if (tile.specialType != null || tile.notificationSender != null) Color.Black.copy(alpha = 0.5f) else Color.Black.copy(alpha = 0.4f),
@@ -1160,6 +1170,24 @@ fun HomeTileItem(
                     lightRevealPosition = localPointerPosition
                 ) {
                     Box(modifier = Modifier.fillMaxSize()) {
+                        // Tile Picture Mode Background
+                        if (tilePictureEnabled && wallpaperUri != null) {
+                            AsyncImage(
+                                model = wallpaperUri,
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .graphicsLayer {
+                                        // Parallax Effect: Wallpaper moves at 40% of scroll speed
+                                        translationX = -tilePosition.x * 0.4f
+                                        translationY = -tilePosition.y * 0.4f
+                                        scaleX = 1.8f // Zoom in to allow movement without edges showing
+                                        scaleY = 1.8f
+                                    },
+                                contentScale = ContentScale.Crop
+                            )
+                        }
+
                         when {
                             tile.isFolder -> FolderTileContent(tile)
                             tile.specialType == HomeTile.TYPE_CLOCK_WEATHER -> FlippingTileContainer(

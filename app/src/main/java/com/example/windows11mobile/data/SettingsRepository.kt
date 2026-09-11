@@ -29,6 +29,7 @@ interface SettingsRepository {
     val hiddenNativeWidgets: Flow<Set<String>>
     val swipeDownForNotifications: Flow<Boolean>
     val showMoreTiles: Flow<Boolean>
+    val tilePictureEnabled: Flow<Boolean>
 
     suspend fun setDarkMode(isDarkMode: Boolean)
     suspend fun setWallpaperUri(uri: String)
@@ -53,6 +54,7 @@ interface SettingsRepository {
     suspend fun setNativeWidgetVisibility(id: String, visible: Boolean)
     suspend fun setSwipeDownForNotifications(enabled: Boolean)
     suspend fun setShowMoreTiles(enabled: Boolean)
+    suspend fun setTilePictureEnabled(enabled: Boolean)
 
     companion object {
         val IS_DARK_MODE = booleanPreferencesKey("is_dark_mode")
@@ -74,6 +76,7 @@ interface SettingsRepository {
         val HIDDEN_NATIVE_WIDGETS = stringSetPreferencesKey("hidden_native_widgets")
         val SWIPE_DOWN_FOR_NOTIFICATIONS = booleanPreferencesKey("swipe_down_for_notifications")
         val SHOW_MORE_TILES = booleanPreferencesKey("show_more_tiles")
+        val TILE_PICTURE_ENABLED = booleanPreferencesKey("tile_picture_enabled")
         
         val DEFAULT_PINNED_APPS = setOf(
             "com.android.settings",
@@ -168,6 +171,10 @@ class RealSettingsRepository(private val context: Context) : SettingsRepository 
 
     override val showMoreTiles: Flow<Boolean> = dataStore.data.map { preferences ->
         preferences[SettingsRepository.SHOW_MORE_TILES] ?: false
+    }
+
+    override val tilePictureEnabled: Flow<Boolean> = dataStore.data.map { preferences ->
+        preferences[SettingsRepository.TILE_PICTURE_ENABLED] ?: false
     }
 
     override suspend fun setDarkMode(isDarkMode: Boolean) {
@@ -320,6 +327,12 @@ class RealSettingsRepository(private val context: Context) : SettingsRepository 
     override suspend fun setShowMoreTiles(enabled: Boolean) {
         dataStore.edit { preferences ->
             preferences[SettingsRepository.SHOW_MORE_TILES] = enabled
+        }
+    }
+
+    override suspend fun setTilePictureEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[SettingsRepository.TILE_PICTURE_ENABLED] = enabled
         }
     }
 }

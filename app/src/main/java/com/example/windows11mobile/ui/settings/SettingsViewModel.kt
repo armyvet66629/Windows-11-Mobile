@@ -61,6 +61,9 @@ class SettingsViewModel(
     val showMoreTiles: StateFlow<Boolean> = repository.showMoreTiles
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    val tilePictureEnabled: StateFlow<Boolean> = repository.tilePictureEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
     val rssFeeds: StateFlow<Set<String>> = repository.rssFeeds
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
 
@@ -172,6 +175,12 @@ class SettingsViewModel(
     fun setShowMoreTiles(enabled: Boolean) {
         viewModelScope.launch {
             repository.setShowMoreTiles(enabled)
+        }
+    }
+
+    fun setTilePictureEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            repository.setTilePictureEnabled(enabled)
         }
     }
 

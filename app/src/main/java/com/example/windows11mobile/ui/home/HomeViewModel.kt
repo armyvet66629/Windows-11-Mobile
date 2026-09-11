@@ -174,6 +174,12 @@ class HomeViewModel(
         null
     )
 
+    val wallpaperUri = settingsRepository.wallpaperUri.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        null
+    )
+
     val useFahrenheit = settingsRepository.useFahrenheit.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
@@ -187,6 +193,12 @@ class HomeViewModel(
     )
 
     val showMoreTiles = settingsRepository.showMoreTiles.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        false
+    )
+
+    val tilePictureEnabled = settingsRepository.tilePictureEnabled.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
         false

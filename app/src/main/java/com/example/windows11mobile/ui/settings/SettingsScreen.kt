@@ -54,6 +54,7 @@ fun SettingsScreen(
     val hiddenNativeWidgets by viewModel.hiddenNativeWidgets.collectAsStateWithLifecycle()
     val swipeDownForNotifications by viewModel.swipeDownForNotifications.collectAsStateWithLifecycle()
     val showMoreTiles by viewModel.showMoreTiles.collectAsStateWithLifecycle()
+    val tilePictureEnabled by viewModel.tilePictureEnabled.collectAsStateWithLifecycle()
     
     var showAddAppDialog by remember { mutableStateOf(false) }
     var showWeatherPicker by remember { mutableStateOf(false) }
@@ -503,6 +504,17 @@ fun SettingsScreen(
                     checked = showMoreTiles,
                     tileOpacity = tileOpacity,
                     onCheckedChange = { viewModel.setShowMoreTiles(it) }
+                )
+            }
+
+            item {
+                SettingsToggleItem(
+                    title = "Tile Picture",
+                    subtitle = "Show wallpaper through tiles with parallax",
+                    icon = Icons.Rounded.BurstMode,
+                    checked = tilePictureEnabled,
+                    tileOpacity = tileOpacity,
+                    onCheckedChange = { viewModel.setTilePictureEnabled(it) }
                 )
             }
 

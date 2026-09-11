@@ -117,6 +117,7 @@ fun MainShell(
     val isEditMode by homeViewModel.isEditMode.collectAsStateWithLifecycle()
     val pageOrder by settingsRepository.pageOrder.collectAsStateWithLifecycle(initialValue = SettingsRepository.DEFAULT_PAGE_ORDER)
     val hiddenPages by settingsRepository.hiddenPages.collectAsStateWithLifecycle(initialValue = emptySet())
+    val tilePictureEnabled by settingsRepository.tilePictureEnabled.collectAsStateWithLifecycle(initialValue = false)
     
     val visiblePages = remember(pageOrder, hiddenPages) {
         pageOrder.filter { it !in hiddenPages || it == "desktop" || it == "apps" }
@@ -174,7 +175,7 @@ fun MainShell(
     ) { innerPadding ->
         Box(modifier = Modifier.fillMaxSize().padding(bottom = innerPadding.calculateBottomPadding())) {
             // Background Wallpaper (Edge-to-Edge)
-            if (wallpaperUri != null) {
+            if (wallpaperUri != null && !tilePictureEnabled) {
                 AsyncImage(
                     model = wallpaperUri,
                     contentDescription = null,
@@ -182,7 +183,7 @@ fun MainShell(
                     contentScale = ContentScale.Crop
                 )
             } else {
-                // Default Mica background if no wallpaper is set
+                // Solid background when Tile Picture is enabled or no wallpaper
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
