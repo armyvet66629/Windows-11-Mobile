@@ -1,5 +1,8 @@
 package com.example.windows11mobile.ui.components
 
+import android.graphics.Bitmap
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.RenderEffect
 import android.graphics.Shader
 import android.os.Build
@@ -23,11 +26,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.unit.dp
+import java.util.Random
 
 enum class FluentEffect {
     MICA,
     ACRYLIC,
-    SMOKE
+    SMOKE,
+    NONE
 }
 
 /**
@@ -54,8 +59,8 @@ fun FluentSurface(
     val noiseBitmap = remember {
         val w = 128
         val h = 128
-        val bitmap = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
-        val random = java.util.Random(42)
+        val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val random = Random(42)
         for (x in 0 until w) {
             for (y in 0 until h) {
                 val brightness = random.nextInt(255)
@@ -72,8 +77,9 @@ fun FluentSurface(
             .shadow(
                 elevation = when (effect) {
                     FluentEffect.MICA -> 2.dp
-                    FluentEffect.ACRYLIC -> 24.dp // Increased for better depth
+                    FluentEffect.ACRYLIC -> 24.dp
                     FluentEffect.SMOKE -> 32.dp
+                    FluentEffect.NONE -> 0.dp
                 },
                 shape = shape,
                 clip = false,
@@ -82,35 +88,60 @@ fun FluentSurface(
             )
             .clip(shape)
     ) {
-        // 1. Background Blur Layer
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .then(
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                        Modifier.graphicsLayer {
-                            if (blurRadius > 0) {
-                                val radius = blurRadius.toFloat()
-                                renderEffect = RenderEffect.createBlurEffect(
-                                    radius,
-                                    radius,
-                                    Shader.TileMode.CLAMP
-                                ).asComposeRenderEffect()
+        // 1. Background Blur Layer + Vibrant Saturation Chain
+        if (effect != FluentEffect.NONE) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .then(
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                            Modifier.graphicsLayer {
+                                if (blurRadius > 0) {
+                                    // Non-linear intensification: boost radius at higher scales
+                                    val radiusMultiplier = 1f + (blurRadius.toFloat() / 500f)
+                                    val radius = blurRadius.toFloat() * radiusMultiplier
+                                    
+                                    // 1.1 Deep Blur Effect
+                                    val blur = RenderEffect.createBlurEffect(radius, radius, Shader.TileMode.CLAMP)
+                                    
+                                    // 1.2 Saturation & Contrast boost for Acrylic vibrancy
+                                    val matrix = ColorMatrix().apply {
+                                        // Dynamic saturation: Higher blur needs more color recovery
+                                        setSaturation(1.8f + (blurRadius.toFloat() / 500f)) 
+                                        val contrast = 1.2f + (blurRadius.toFloat() / 800f)
+                                        val translate = (-0.5f * contrast + 0.5f) * 255f
+                                        postConcat(
+                                            ColorMatrix(floatArrayOf(
+                                                contrast, 0f, 0f, 0f, translate,
+                                                0f, contrast, 0f, 0f, translate,
+                                                0f, 0f, contrast, 0f, translate,
+                                                0f, 0f, 0f, 1f, 0f
+                                            ))
+                                        )
+                                    }
+                                    val colorFilter = RenderEffect.createColorFilterEffect(
+                                        ColorMatrixColorFilter(matrix)
+                                    )
+                                    
+                                    // Chain them: Blur -> Enhance Colors
+                                    renderEffect = RenderEffect.createChainEffect(blur, colorFilter).asComposeRenderEffect()
+                                }
                             }
+                        } else {
+                            Modifier.blur(blurRadius.dp)
                         }
-                    } else {
-                        Modifier.blur(blurRadius.dp)
-                    }
-                )
-        )
+                    )
+            )
+        }
 
-        // 2. Luminosity Layer (The "Glow" behind the tint)
+        // 2. Luminosity Layer (The "Glow" behind the tint) - Intensifies with blur radius
+        val blurIntensity = (blurRadius.toFloat() / 250f).coerceIn(0f, 1f)
         Box(
             modifier = Modifier
                 .matchParentSize()
                 .background(
-                    if (isDark) Color.Black.copy(alpha = luminosityAlpha)
-                    else Color.White.copy(alpha = luminosityAlpha)
+                    if (isDark) Color.Black.copy(alpha = (luminosityAlpha * (1.3f + blurIntensity * 0.5f)).coerceAtMost(0.6f))
+                    else Color.White.copy(alpha = (luminosityAlpha * (1.8f + blurIntensity * 0.7f)).coerceAtMost(0.7f))
                 )
         )
 
@@ -120,9 +151,10 @@ fun FluentSurface(
                 .matchParentSize()
                 .background(
                     when (effect) {
-                        FluentEffect.MICA -> color.copy(alpha = 0.8f)
-                        FluentEffect.ACRYLIC -> color.copy(alpha = alpha)
-                        FluentEffect.SMOKE -> if (isDark) Color.Black.copy(alpha = 0.5f) else Color.Black.copy(alpha = 0.3f)
+                        FluentEffect.MICA -> color.copy(alpha = 0.85f)
+                        FluentEffect.ACRYLIC -> color.copy(alpha = alpha * 0.9f)
+                        FluentEffect.SMOKE -> if (isDark) Color.Black.copy(alpha = 0.6f) else Color.Black.copy(alpha = 0.4f)
+                        FluentEffect.NONE -> color.copy(alpha = alpha)
                     }
                 )
         )
@@ -136,7 +168,7 @@ fun FluentSurface(
             )
         }
 
-        // 4. Noise/Texture Layer
+        // 4. Noise/Texture Layer - Primary dither layer to prevent banding
         Box(
             modifier = Modifier
                 .matchParentSize()
@@ -144,11 +176,10 @@ fun FluentSurface(
                     val shader = ImageShader(noiseBitmap, TileMode.Repeated, TileMode.Repeated)
                     val paint = Paint().apply {
                         this.shader = shader
-                        this.alpha = noiseOpacity
+                        this.alpha = noiseOpacity * 2.5f 
                         this.blendMode = if (isDark) BlendMode.Screen else BlendMode.Overlay
                     }
                     onDrawWithContent {
-                        drawContent()
                         if (effect == FluentEffect.ACRYLIC || effect == FluentEffect.MICA) {
                             drawIntoCanvas { canvas ->
                                 canvas.drawRect(0f, 0f, size.width, size.height, paint)
@@ -176,7 +207,7 @@ fun FluentSurface(
             modifier = Modifier
                 .matchParentSize()
                 .border(
-                    width = 0.8.dp, // Slightly thicker for definition
+                    width = 0.8.dp,
                     brush = if (lightRevealPosition != null) {
                         Brush.radialGradient(
                             colors = listOf(

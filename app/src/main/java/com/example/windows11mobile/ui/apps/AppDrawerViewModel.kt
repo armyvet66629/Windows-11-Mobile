@@ -70,6 +70,18 @@ class AppDrawerViewModel(
             }
         }
     }
+
+    fun pinApp(packageName: String) {
+        viewModelScope.launch {
+            settingsRepository.pinApp(packageName)
+        }
+    }
+
+    fun unpinApp(packageName: String) {
+        viewModelScope.launch {
+            settingsRepository.unpinApp(packageName)
+        }
+    }
 }
 
 class AppDrawerViewModelFactory(

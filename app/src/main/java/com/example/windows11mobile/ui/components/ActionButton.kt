@@ -1,5 +1,6 @@
 package com.example.windows11mobile.ui.components
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -23,18 +24,21 @@ fun ActionButton(
     icon: Any? = null,
     contentColor: Color = MaterialTheme.colorScheme.onSurface
 ) {
-    Button(
-        onClick = onClick,
-        modifier = modifier.fillMaxWidth(),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = Color.White.copy(alpha = 0.08f),
-            contentColor = contentColor
-        ),
+    FluentSurface(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
         shape = RoundedCornerShape(14.dp),
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp)
+        alpha = 0.12f,
+        effect = FluentEffect.ACRYLIC,
+        blurRadius = 40,
+        tintColor = Color.White.copy(alpha = 0.05f),
+        luminosityAlpha = 0.08f
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             when (icon) {
@@ -62,7 +66,7 @@ fun ActionButton(
                 }
             }
             Spacer(modifier = Modifier.width(16.dp))
-            Text(text, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Normal)
+            Text(text, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold, color = contentColor)
         }
     }
 }

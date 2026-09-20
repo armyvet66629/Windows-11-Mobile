@@ -1,23 +1,27 @@
 package com.example.windows11mobile.ui.settings
 
+import android.app.Application
+import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.CreationExtras
 import com.example.windows11mobile.data.AppInfo
-import com.example.windows11mobile.data.AppRepository
+import com.example.windows11mobile.data.RealAppRepository
 import com.example.windows11mobile.data.SettingsRepository
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class SettingsViewModel(
     private val repository: SettingsRepository,
-    private val appRepository: AppRepository
-) : ViewModel() {
+    private val appRepository: RealAppRepository,
+    application: Application
+) : AndroidViewModel(application) {
 
     val isDarkMode: StateFlow<Boolean?> = repository.isDarkMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
@@ -28,14 +32,11 @@ class SettingsViewModel(
     val pinnedApps: StateFlow<Set<String>> = repository.pinnedApps
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
 
-    val tileOpacity: StateFlow<Float> = repository.tileOpacity
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.25f)
+    val installedApps: StateFlow<List<AppInfo>> = appRepository.observeApps()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val weatherAppPackage: StateFlow<String?> = repository.weatherAppPackage
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
-
-    val accentColor: StateFlow<Int> = repository.accentColor
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SettingsRepository.DEFAULT_ACCENT_COLOR)
 
     val useFahrenheit: StateFlow<Boolean> = repository.useFahrenheit
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
@@ -44,13 +45,19 @@ class SettingsViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     val pageOrder: StateFlow<List<String>> = repository.pageOrder
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SettingsRepository.DEFAULT_PAGE_ORDER)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val hiddenPages: StateFlow<Set<String>> = repository.hiddenPages
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
 
     val statusBarMode: StateFlow<String> = repository.statusBarMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "auto")
+
+    val accentColor: StateFlow<Int> = repository.accentColor
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0xFF0078D4.toInt())
+
+    val tileOpacity: StateFlow<Float> = repository.tileOpacity
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.25f)
 
     val hiddenNativeWidgets: StateFlow<Set<String>> = repository.hiddenNativeWidgets
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
@@ -64,45 +71,27 @@ class SettingsViewModel(
     val tilePictureEnabled: StateFlow<Boolean> = repository.tilePictureEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    val tileBlurRadius: StateFlow<Float> = repository.tileBlurRadius
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 80f)
+
+    val homeScreenBlurEnabled: StateFlow<Boolean> = repository.homeScreenBlurEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    val useSystemWallpaper: StateFlow<Boolean> = repository.useSystemWallpaper
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
     val rssFeeds: StateFlow<Set<String>> = repository.rssFeeds
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
 
-    fun addRssFeed(url: String) {
+    fun setDarkMode(enabled: Boolean) {
         viewModelScope.launch {
-            repository.addRssFeed(url)
+            repository.setDarkMode(enabled)
         }
     }
 
-    fun removeRssFeed(url: String) {
-        viewModelScope.launch {
-            repository.removeRssFeed(url)
-        }
-    }
-
-    private val _installedApps = MutableStateFlow<List<AppInfo>>(emptyList())
-    val installedApps = _installedApps.asStateFlow()
-
-    init {
-        viewModelScope.launch {
-            _installedApps.value = appRepository.getInstalledApps()
-        }
-    }
-
-    fun setDarkMode(isDarkMode: Boolean) {
-        viewModelScope.launch {
-            repository.setDarkMode(isDarkMode)
-        }
-    }
-
-    fun setWallpaperUri(uri: String) {
+    fun setWallpaperUri(uri: String?) {
         viewModelScope.launch {
             repository.setWallpaperUri(uri)
-        }
-    }
-
-    fun setTileOpacity(opacity: Float) {
-        viewModelScope.launch {
-            repository.setTileOpacity(opacity)
         }
     }
 
@@ -130,15 +119,15 @@ class SettingsViewModel(
         }
     }
 
-    fun setUseFahrenheit(useFahrenheit: Boolean) {
+    fun setUseFahrenheit(enabled: Boolean) {
         viewModelScope.launch {
-            repository.setUseFahrenheit(useFahrenheit)
+            repository.setUseFahrenheit(enabled)
         }
     }
 
-    fun setShowTaskbar(show: Boolean) {
+    fun setShowTaskbar(enabled: Boolean) {
         viewModelScope.launch {
-            repository.setShowTaskbar(show)
+            repository.setShowTaskbar(enabled)
         }
     }
 
@@ -157,6 +146,12 @@ class SettingsViewModel(
     fun setStatusBarMode(mode: String) {
         viewModelScope.launch {
             repository.setStatusBarMode(mode)
+        }
+    }
+
+    fun setTileOpacity(opacity: Float) {
+        viewModelScope.launch {
+            repository.setTileOpacity(opacity)
         }
     }
 
@@ -184,11 +179,39 @@ class SettingsViewModel(
         }
     }
 
-    fun restartLauncher(context: android.content.Context) {
-        val packageManager = context.packageManager
-        val intent = packageManager.getLaunchIntentForPackage(context.packageName)
-        val componentName = intent?.component
-        val mainIntent = Intent.makeRestartActivityTask(componentName)
+    fun setTileBlurRadius(radius: Float) {
+        viewModelScope.launch {
+            repository.setTileBlurRadius(radius)
+        }
+    }
+
+    fun setHomeScreenBlurEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            repository.setHomeScreenBlurEnabled(enabled)
+        }
+    }
+
+    fun setUseSystemWallpaper(enabled: Boolean) {
+        viewModelScope.launch {
+            repository.setUseSystemWallpaper(enabled)
+        }
+    }
+
+    fun addRssFeed(url: String) {
+        viewModelScope.launch {
+            repository.addRssFeed(url)
+        }
+    }
+
+    fun removeRssFeed(url: String) {
+        viewModelScope.launch {
+            repository.removeRssFeed(url)
+        }
+    }
+
+    fun restartLauncher(context: Context) {
+        val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
+        val mainIntent = Intent.makeRestartActivityTask(intent?.component)
         context.startActivity(mainIntent)
         Runtime.getRuntime().exit(0)
     }
@@ -196,13 +219,10 @@ class SettingsViewModel(
 
 class SettingsViewModelFactory(
     private val repository: SettingsRepository,
-    private val appRepository: AppRepository
+    private val appRepository: RealAppRepository
 ) : ViewModelProvider.Factory {
-    override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        if (modelClass.isAssignableFrom(SettingsViewModel::class.java)) {
-            @Suppress("UNCHECKED_CAST")
-            return SettingsViewModel(repository, appRepository) as T
-        }
-        throw IllegalArgumentException("Unknown ViewModel class")
+    override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T {
+        val application = extras[ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY] ?: throw IllegalArgumentException("Application required")
+        return SettingsViewModel(repository, appRepository, application) as T
     }
 }

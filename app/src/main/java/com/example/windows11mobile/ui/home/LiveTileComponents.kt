@@ -3,6 +3,7 @@ package com.example.windows11mobile.ui.home
 import android.content.Intent
 import android.net.Uri
 import android.provider.AlarmClock
+import android.provider.Settings
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Image
@@ -29,6 +30,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -44,6 +46,9 @@ import coil.request.CachePolicy
 import com.example.windows11mobile.data.HomeTile
 import com.example.windows11mobile.data.TileSize
 import com.example.windows11mobile.data.Contact
+import com.example.windows11mobile.data.NotificationData
+import com.example.windows11mobile.data.AppNotificationData
+import com.example.windows11mobile.data.NewsArticle
 import com.example.windows11mobile.ui.components.FluentIcon
 import com.example.windows11mobile.ui.theme.FluentIcons
 import java.text.SimpleDateFormat
@@ -259,7 +264,10 @@ fun WeatherForecastBack(weatherData: com.example.windows11mobile.data.WeatherDat
             } else {
                 forecast.forEach { day ->
                     val (icon, color) = getWeatherInfo(day.icon)
-                    Box(modifier = Modifier.weight(1f)) {
+                    Box(
+                        modifier = Modifier.weight(1f),
+                        contentAlignment = Alignment.Center
+                    ) {
                         ForecastItem(day.day, "${day.temp.toInt()}°", icon, color)
                     }
                 }
@@ -446,7 +454,7 @@ fun getWeatherInfo(condition: String): Pair<ImageVector, Color> {
 }
 
 @Composable
-fun PhotoLiveTile(tile: HomeTile, localPhotos: List<Uri> = emptyList()) {
+fun PhotoLiveTile(tile: HomeTile, localPhotos: List<Uri> = emptyList(), tileOpacity: Float = 1f) {
     val fallbackPhotos = remember {
         listOf(
             "https://images.unsplash.com/photo-1506744038136-46273834b3fb",
@@ -491,13 +499,13 @@ fun PhotoLiveTile(tile: HomeTile, localPhotos: List<Uri> = emptyList()) {
         ) { index ->
             val photos = photosState.value
             val photoUri = if (photos.isNotEmpty()) photos[index % photos.size] else fallbackPhotos[0]
-            PhotoItem(photoUri, tile.size)
+            PhotoItem(photoUri, tile.size, tileOpacity)
         }
     }
 }
 
 @Composable
-private fun PhotoItem(photo: Any, size: TileSize) {
+private fun PhotoItem(photo: Any, size: TileSize, tileOpacity: Float = 1f) {
     val context = LocalContext.current
     Box(modifier = Modifier.fillMaxSize()) {
         AsyncImage(
@@ -508,7 +516,7 @@ private fun PhotoItem(photo: Any, size: TileSize) {
                 .crossfade(true)
                 .build(),
             contentDescription = null,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().alpha(tileOpacity),
             contentScale = ContentScale.Crop,
             onError = { error ->
                 android.util.Log.e("PhotoLiveTile", "Error loading photo: $photo", error.result.throwable)
@@ -702,7 +710,8 @@ fun MusicLiveTile(
     media: com.example.windows11mobile.data.MediaData? = null,
     onPlayPause: () -> Unit = {},
     onSkipNext: () -> Unit = {},
-    onSkipPrevious: () -> Unit = {}
+    onSkipPrevious: () -> Unit = {},
+    tileOpacity: Float = 1f
 ) {
     val brandingColor = remember(tile.packageName) {
         when {
@@ -712,6 +721,9 @@ fun MusicLiveTile(
         }
     }
     
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val baseTint = if (isDark) Color.Black else Color.White
+    
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val isSmallWidth = maxWidth < 200.dp
         val padding = if (isSmallWidth) 8.dp else 12.dp
@@ -720,14 +732,14 @@ fun MusicLiveTile(
             Image(
                 bitmap = media.albumArt.asImageBitmap(),
                 contentDescription = null,
-                modifier = Modifier.fillMaxSize().alpha(0.5f),
+                modifier = Modifier.fillMaxSize().alpha(0.5f * tileOpacity),
                 contentScale = ContentScale.Crop
             )
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.3f)))
+            Box(Modifier.fillMaxSize().background(baseTint.copy(alpha = 0.3f * tileOpacity)))
         } else {
             Box(
                 modifier = Modifier.fillMaxSize().background(
-                    Brush.verticalGradient(listOf(brandingColor.copy(alpha = 0.2f), Color.Transparent))
+                    Brush.verticalGradient(listOf(brandingColor.copy(alpha = 0.2f * tileOpacity), Color.Transparent))
                 )
             )
         }
@@ -764,12 +776,12 @@ fun MusicLiveTile(
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        color = Color.White
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
                         text = media.artist ?: "Unknown Artist",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.8f),
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -812,6 +824,7 @@ fun MusicLiveTile(
 
 @Composable
 fun SettingsLiveTile(tile: HomeTile) {
+    val context = LocalContext.current
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val isSmallWidth = maxWidth < 200.dp
         val horizontalPadding = if (isSmallWidth) 8.dp else 12.dp
@@ -844,9 +857,37 @@ fun SettingsLiveTile(tile: HomeTile) {
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                QuickToggle(icon = Icons.Rounded.Wifi, enabled = true, isSmall = isSmallWidth, onClick = { })
-                QuickToggle(icon = Icons.Rounded.Bluetooth, enabled = true, isSmall = isSmallWidth, onClick = { })
-                QuickToggle(icon = Icons.Rounded.FlashlightOn, enabled = false, isSmall = isSmallWidth, onClick = { })
+                QuickToggle(
+                    icon = Icons.Rounded.Wifi, 
+                    enabled = true, 
+                    isSmall = isSmallWidth, 
+                    onClick = {
+                        try {
+                            context.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        } catch (e: Exception) {}
+                    }
+                )
+                QuickToggle(
+                    icon = Icons.Rounded.Bluetooth, 
+                    enabled = true, 
+                    isSmall = isSmallWidth, 
+                    onClick = {
+                        try {
+                            context.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        } catch (e: Exception) {}
+                    }
+                )
+                QuickToggle(
+                    icon = Icons.Rounded.FlashlightOn, 
+                    enabled = false, 
+                    isSmall = isSmallWidth, 
+                    onClick = {
+                        try {
+                            // Launching main settings as a fallback for flashlight
+                            context.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        } catch (e: Exception) {}
+                    }
+                )
             }
             
             if (tile.size == TileSize.WIDE || tile.size == TileSize.LARGE) {
@@ -855,13 +896,36 @@ fun SettingsLiveTile(tile: HomeTile) {
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    QuickToggle(icon = Icons.AutoMirrored.Rounded.AirplaneTicket, enabled = false, isSmall = isSmallWidth, onClick = { })
-                    QuickToggle(icon = Icons.Rounded.ScreenRotation, enabled = true, isSmall = isSmallWidth, onClick = { })
                     QuickToggle(
-                        icon = Icons.Rounded.BrightnessAuto, 
+                        icon = Icons.Rounded.AirplanemodeActive, 
+                        enabled = false, 
+                        isSmall = isSmallWidth, 
+                        onClick = {
+                            try {
+                                context.startActivity(Intent(Settings.ACTION_AIRPLANE_MODE_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                            } catch (e: Exception) {}
+                        }
+                    )
+                    QuickToggle(
+                        icon = Icons.Rounded.ScreenRotation, 
+                        enabled = true, 
+                        isSmall = isSmallWidth, 
+                        onClick = {
+                            try {
+                                context.startActivity(Intent(Settings.ACTION_DISPLAY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                            } catch (e: Exception) {}
+                        }
+                    )
+                    QuickToggle(
+                        icon = Icons.Rounded.LightMode, 
                         enabled = true, 
                         isSmall = isSmallWidth,
-                        onClick = { },
+                        onClick = {
+                            try {
+                                // Launch display settings for brightness adjustment
+                                context.startActivity(Intent(Settings.ACTION_DISPLAY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                            } catch (e: Exception) {}
+                        },
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -964,23 +1028,21 @@ fun LiveTileList(
                         )
                         Spacer(modifier = Modifier.width(if (isSmallWidth) 8.dp else 12.dp))
                     }
-                    Column {
-                        Text(
-                            text = title,
-                            style = if (isSmallWidth) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            text = subtitle,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.7f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
+                    Text(
+                        text = title,
+                        style = if (isSmallWidth) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
         }
@@ -994,13 +1056,17 @@ fun YouTubeLiveTile(
     recentNotifications: List<com.example.windows11mobile.data.NotificationData> = emptyList(),
     onPlayPause: () -> Unit = {},
     onSkipNext: () -> Unit = {},
-    onSkipPrevious: () -> Unit = {}
+    onSkipPrevious: () -> Unit = {},
+    tileOpacity: Float = 1f
 ) {
     val isYouTubeMedia = media?.packageName?.contains("youtube") == true
     val isPlaying = isYouTubeMedia && media?.isPlaying == true
     val displayTitle = if (isYouTubeMedia) media!!.title else recentNotifications.firstOrNull()?.content ?: recentNotifications.firstOrNull()?.summary
     val displayArtist = if (isYouTubeMedia) media!!.artist else recentNotifications.firstOrNull()?.sender
     val albumArt = if (isYouTubeMedia) media!!.albumArt else null
+
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val baseTint = if (isDark) Color.Black else Color.White
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val isSmallWidth = maxWidth < 200.dp
@@ -1010,14 +1076,14 @@ fun YouTubeLiveTile(
             Image(
                 bitmap = albumArt.asImageBitmap(),
                 contentDescription = null,
-                modifier = Modifier.fillMaxSize().alpha(0.4f),
+                modifier = Modifier.fillMaxSize().alpha(0.4f * tileOpacity),
                 contentScale = ContentScale.Crop
             )
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)))
+            Box(Modifier.fillMaxSize().background(baseTint.copy(alpha = 0.4f * tileOpacity)))
         } else {
             Box(
                 modifier = Modifier.fillMaxSize().background(
-                    Brush.verticalGradient(listOf(Color.Red.copy(alpha = 0.2f), Color.Transparent))
+                    Brush.verticalGradient(listOf(Color.Red.copy(alpha = 0.2f * tileOpacity), Color.Transparent))
                 )
             )
         }
@@ -1054,13 +1120,13 @@ fun YouTubeLiveTile(
                         fontWeight = FontWeight.Bold,
                         maxLines = if (tile.size == TileSize.LARGE) 4 else 2,
                         overflow = TextOverflow.Ellipsis,
-                        color = Color.White
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     if (displayArtist != null) {
                         Text(
                             text = displayArtist,
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.8f),
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -1121,7 +1187,80 @@ fun GenericNotificationLiveTile(tile: HomeTile, recentNotifications: List<com.ex
 }
 
 @Composable
-fun NewsLiveTileBack(articles: List<com.example.windows11mobile.data.NewsArticle>) {
+fun NotificationNewsLiveTile(tile: HomeTile, notifications: List<NotificationData>, tileOpacity: Float = 1f) {
+    val newsItems = remember(notifications) {
+        notifications.filter { it.bigPicture != null || it.largeIcon != null }
+    }
+    
+    var currentIndex by remember { mutableIntStateOf(0) }
+    
+    LaunchedEffect(newsItems) {
+        while (newsItems.size > 1) {
+            delay(6000)
+            currentIndex = (currentIndex + 1) % newsItems.size
+        }
+    }
+
+    if (newsItems.isEmpty()) {
+        StandardTileContent(tile, null)
+    } else {
+        val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+        val baseTint = if (isDark) Color.Black else Color.White
+        val item = newsItems[currentIndex % newsItems.size]
+        Box(modifier = Modifier.fillMaxSize()) {
+            val image = item.bigPicture ?: item.largeIcon
+            if (image != null) {
+                Image(
+                    bitmap = image.asImageBitmap(),
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize().alpha(0.6f * tileOpacity),
+                    contentScale = ContentScale.Crop
+                )
+                Box(Modifier.fillMaxSize().background(baseTint.copy(alpha = 0.3f * tileOpacity)))
+            }
+
+            Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Rounded.Public,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = Color(0xFF0078D4) // MSN Blue
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "MSN NEWS",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Black,
+                        color = Color(0xFF0078D4),
+                        letterSpacing = 1.2.sp
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = item.sender ?: "",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                if (item.content != null && tile.size == TileSize.LARGE) {
+                    Text(
+                        text = item.content,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun NewsLiveTileBack(articles: List<NewsArticle>, tileOpacity: Float = 1f) {
     var currentIndex by remember { mutableIntStateOf(0) }
     
     LaunchedEffect(articles) {
@@ -1136,18 +1275,20 @@ fun NewsLiveTileBack(articles: List<com.example.windows11mobile.data.NewsArticle
             Text("No news available", style = MaterialTheme.typography.bodyMedium)
         }
     } else {
+        val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+        val baseTint = if (isDark) Color.Black else Color.White
         val article = articles[currentIndex]
         Box(modifier = Modifier.fillMaxSize()) {
             if (article.urlToImage != null) {
                 AsyncImage(
                     model = article.urlToImage,
                     contentDescription = null,
-                    modifier = Modifier.fillMaxSize().alpha(0.5f),
+                    modifier = Modifier.fillMaxSize().alpha(0.5f * tileOpacity),
                     contentScale = ContentScale.Crop
                 )
-                Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)))
+                Box(Modifier.fillMaxSize().background(baseTint.copy(alpha = 0.4f * tileOpacity)))
             } else {
-                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)))
+                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f * tileOpacity)))
             }
 
             Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
@@ -1174,13 +1315,13 @@ fun NewsLiveTileBack(articles: List<com.example.windows11mobile.data.NewsArticle
                     fontWeight = FontWeight.Bold,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
-                    color = Color.White
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(modifier = Modifier.weight(1f))
                 Text(
                     text = article.source.name,
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color.White.copy(alpha = 0.7f),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                     fontWeight = FontWeight.Bold
                 )
             }
@@ -1231,7 +1372,30 @@ fun DateBackSide() {
 }
 
 @Composable
-fun FolderTileContent(tile: HomeTile) {
+fun FolderTileContent(
+    tile: HomeTile,
+    allNotifications: Map<String, AppNotificationData> = emptyMap()
+) {
+    // Collect all notifications for apps inside this folder
+    val folderNotifications = remember(tile.subTiles, allNotifications) {
+        tile.subTiles.flatMap { subTile ->
+            allNotifications[subTile.packageName]?.recentNotifications ?: emptyList()
+        }.sortedByDescending { it.postTime }
+    }
+
+    if (folderNotifications.isNotEmpty() && tile.size != TileSize.SMALL) {
+        FlippingTileContainer(
+            isLive = true,
+            front = { FolderStaticGrid(tile) },
+            back = { GenericNotificationLiveTile(tile, folderNotifications) }
+        )
+    } else {
+        FolderStaticGrid(tile)
+    }
+}
+
+@Composable
+fun FolderStaticGrid(tile: HomeTile) {
     Column(
         modifier = Modifier.fillMaxSize().padding(12.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -1366,12 +1530,12 @@ fun StandardTileContent(tile: HomeTile, icon: android.graphics.drawable.Drawable
                         softWrap = false
                     )
                     if (tile.notificationSummary != null) {
-                        Spacer(modifier = Modifier.height(2.dp))
+                        Spacer(modifier = Modifier.height(1.dp))
                         Text(
                             text = tile.notificationSummary,
-                            style = if (isSmallWidth) MaterialTheme.typography.labelMedium else MaterialTheme.typography.bodyLarge,
+                            style = if (isSmallWidth) MaterialTheme.typography.labelSmall else MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.Bold,
-                            maxLines = if (tile.size == TileSize.LARGE) 6 else 2,
+                            maxLines = if (tile.size == TileSize.LARGE) 6 else 1,
                             overflow = TextOverflow.Ellipsis,
                             color = MaterialTheme.colorScheme.onSurface
                         )

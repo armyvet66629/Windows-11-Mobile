@@ -53,18 +53,18 @@ class CalendarRepository(private val context: Context) {
                 val colorIdx = cursor.getColumnIndex(CalendarContract.Instances.DISPLAY_COLOR)
 
                 while (cursor.moveToNext()) {
-                    eventsList.add(
-                        CalendarEvent(
-                            id = cursor.getLong(idIdx),
-                            title = cursor.getString(titleIdx) ?: "No Title",
-                            startTime = cursor.getLong(beginIdx),
-                            endTime = cursor.getLong(endIdx),
-                            color = cursor.getInt(colorIdx)
-                        )
+                    val event = CalendarEvent(
+                        id = cursor.getLong(idIdx),
+                        title = cursor.getString(titleIdx) ?: "No Title",
+                        startTime = cursor.getLong(beginIdx),
+                        endTime = cursor.getLong(endIdx),
+                        color = cursor.getInt(colorIdx)
                     )
+                    eventsList.add(event)
                 }
             }
-            _events.value = eventsList
+            // Filter out duplicates (same title and start time)
+            _events.value = eventsList.distinctBy { it.title to it.startTime }
         } catch (e: SecurityException) {
             // No permission
         } catch (e: Exception) {

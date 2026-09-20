@@ -1,8 +1,15 @@
 package com.example.windows11mobile.ui.shell
 
+import android.annotation.SuppressLint
+import android.app.Application
+import android.app.WallpaperManager
 import android.content.Intent
+import android.graphics.RenderEffect
+import android.graphics.Shader
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
+import android.util.Log
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -14,7 +21,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -56,13 +65,16 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.example.windows11mobile.data.RssRepository
 import com.example.windows11mobile.ui.settings.SettingsViewModelFactory
 import com.example.windows11mobile.ui.theme.rememberWallpaperColor
 import com.example.windows11mobile.ui.components.FluentSurface
 import com.example.windows11mobile.ui.components.FluentEffect
 import com.example.windows11mobile.ui.components.WindowsDock
+import com.example.windows11mobile.ui.home.HomeViewModelFactory
 import kotlinx.coroutines.launch
 
+@SuppressLint("MissingPermission")
 @Composable
 fun MainShell(
     backStack: NavBackStack<NavKey>,
@@ -73,12 +85,12 @@ fun MainShell(
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
     val appRepository = remember { RealAppRepository(context) }
-    val newsRepository = remember { RealNewsRepository(null) } // No API key for now
-    val rssRepository = remember { com.example.windows11mobile.data.RssRepository() }
+    val newsRepository = remember { RealNewsRepository(null) }
+    val rssRepository = remember { RssRepository() }
     
-    val application = context.applicationContext as android.app.Application
+    val application = context.applicationContext as Application
     val homeViewModel: HomeViewModel = viewModel(
-        factory = com.example.windows11mobile.ui.home.HomeViewModelFactory(settingsRepository, rssRepository, application)
+        factory = HomeViewModelFactory(settingsRepository, rssRepository, application)
     )
 
     var isShellVisible by remember { mutableStateOf(false) }
@@ -97,19 +109,18 @@ fun MainShell(
                 else -> {}
             }
         }
-        
-        // Handle current state if already started
-        if (lifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
+        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
             homeViewModel.startWidgetListening()
         }
-        
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
             homeViewModel.stopWidgetListening()
         }
     }
+
     val wallpaperUri by settingsRepository.wallpaperUri.collectAsStateWithLifecycle(initialValue = null)
+    val useSystemWallpaper by settingsRepository.useSystemWallpaper.collectAsStateWithLifecycle(initialValue = false)
     val showTaskbar by settingsRepository.showTaskbar.collectAsStateWithLifecycle(initialValue = false)
     val pinnedApps by settingsRepository.pinnedApps.collectAsStateWithLifecycle(initialValue = emptySet())
     val installedApps by homeViewModel.installedApps.collectAsStateWithLifecycle()
@@ -118,6 +129,8 @@ fun MainShell(
     val pageOrder by settingsRepository.pageOrder.collectAsStateWithLifecycle(initialValue = SettingsRepository.DEFAULT_PAGE_ORDER)
     val hiddenPages by settingsRepository.hiddenPages.collectAsStateWithLifecycle(initialValue = emptySet())
     val tilePictureEnabled by settingsRepository.tilePictureEnabled.collectAsStateWithLifecycle(initialValue = false)
+    val tileBlurRadius by settingsRepository.tileBlurRadius.collectAsStateWithLifecycle(initialValue = 60f)
+    val homeScreenBlurEnabled by settingsRepository.homeScreenBlurEnabled.collectAsStateWithLifecycle(initialValue = true)
     
     val visiblePages = remember(pageOrder, hiddenPages) {
         pageOrder.filter { it !in hiddenPages || it == "desktop" || it == "apps" }
@@ -127,34 +140,31 @@ fun MainShell(
         initialPage = visiblePages.indexOf("desktop").coerceAtLeast(0)
     ) { visiblePages.size }
     
-    // Handle home button press to return to desktop
     LaunchedEffect(homeViewModel) {
         homeViewModel.homeButtonPressed.collect {
+            // 1. Clear backstack to return to home from Settings etc
+            while (backStack.size > 1) {
+                backStack.removeAt(backStack.size - 1)
+            }
+            
+            // 2. Scroll pager back to desktop
             val desktopIndex = visiblePages.indexOf("desktop")
             if (desktopIndex != -1 && pagerState.currentPage != desktopIndex) {
                 pagerState.animateScrollToPage(
                     page = desktopIndex,
-                    animationSpec = tween(
-                        durationMillis = 600,
-                        easing = FastOutSlowInEasing
-                    )
+                    animationSpec = tween(400, easing = FastOutSlowInEasing)
                 )
             }
         }
     }
     
-    // Haptic feedback for page swiping
     LaunchedEffect(pagerState.currentPage) {
         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
     }
     
     val currentRoute = backStack.lastOrNull()
 
-    val shellAlpha by animateFloatAsState(
-        targetValue = if (isShellVisible) 1f else 0.8f,
-        animationSpec = tween(500, easing = FastOutSlowInEasing),
-        label = "shellAlpha"
-    )
+    val shellAlpha = 1f 
     val shellScale by animateFloatAsState(
         targetValue = if (isShellVisible) 1f else 1.05f,
         animationSpec = tween(500, easing = FastOutSlowInEasing),
@@ -169,148 +179,140 @@ fun MainShell(
                 scaleX = shellScale
                 scaleY = shellScale
             },
-        containerColor = Color.Transparent, // Ensure background shows through
+        containerColor = MaterialTheme.colorScheme.background,
         contentColor = MaterialTheme.colorScheme.onBackground,
-        contentWindowInsets = WindowInsets(0.dp) // Disable automatic insets to allow content behind status bar
+        contentWindowInsets = WindowInsets(0.dp)
     ) { innerPadding ->
         Box(modifier = Modifier.fillMaxSize().padding(bottom = innerPadding.calculateBottomPadding())) {
-            // Background Wallpaper (Edge-to-Edge)
-            if (wallpaperUri != null && !tilePictureEnabled) {
-                AsyncImage(
-                    model = wallpaperUri,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
+            // Background Wallpaper Logic
+            if (tilePictureEnabled) {
+                // Strictly black background for Picture Mode to prevent ghosting/overlap
+                Box(modifier = Modifier.fillMaxSize().background(Color.Black))
             } else {
-                // Solid background when Tile Picture is enabled or no wallpaper
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.background)
-                )
+                // Resolve wallpaper source: Custom URI or System Drawable
+                val wallpaperSource = remember(wallpaperUri, useSystemWallpaper) {
+                    if (!useSystemWallpaper && wallpaperUri != null) {
+                        wallpaperUri
+                    } else {
+                        try {
+                            WallpaperManager.getInstance(context).drawable
+                        } catch (e: Exception) {
+                            null
+                        }
+                    }
+                }
+
+                if (wallpaperSource != null) {
+                    AsyncImage(
+                        model = wallpaperSource,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize().graphicsLayer {
+                            if (homeScreenBlurEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                 renderEffect = RenderEffect.createBlurEffect(
+                                    tileBlurRadius / 4f, tileBlurRadius / 4f, Shader.TileMode.CLAMP
+                                 ).asComposeRenderEffect()
+                            }
+                        },
+                        contentScale = ContentScale.Crop
+                    )
+                    Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)))
+                } else {
+                    // PREMIUM GRADIENT FALLBACK
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(
+                                        MaterialTheme.colorScheme.surfaceVariant,
+                                        MaterialTheme.colorScheme.surface
+                                    )
+                                )
+                            )
+                    )
+                }
             }
 
-            // Content Area (Edge-to-Edge)
-            // Apply only bottom padding for the navigation bar/dock if needed, 
-            // but for a launcher, we usually want full edge-to-edge.
             Box(modifier = Modifier.fillMaxSize()) {
                 if (currentRoute in listOf(Dest.Desktop, Dest.AppDrawer, Dest.NewsFeed, null)) {
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        HorizontalPager(
-                            state = pagerState,
-                            modifier = Modifier.fillMaxSize(),
-                            reverseLayout = false,
-                            userScrollEnabled = !isDragging && !isEditMode
-                        ) { pageIndex ->
-                            val pageId = visiblePages.getOrNull(pageIndex) ?: ""
-                            when (pageId) {
-                                "board" -> {
-                                    val viewModel: NewsFeedViewModel = viewModel(
-                                        factory = NewsFeedViewModelFactory(newsRepository, rssRepository, settingsRepository, context)
-                                    )
-                                    WidgetsBoardScreen(
-                                        newsViewModel = viewModel,
-                                        appWidgetHost = homeViewModel.appWidgetHost,
-                                        showTaskbar = showTaskbar
-                                    )
-                                }
-                                "desktop" -> {
-                                    val scope = rememberCoroutineScope()
-                                    HomeScreen(
-                                        viewModel = homeViewModel,
-                                        onAppClick = { packageName ->
-                                            val intent = context.packageManager.getLaunchIntentForPackage(packageName)
-                                            if (intent != null) {
-                                                context.startActivity(intent)
-                                            }
-                                        },
-                                        onAddAppsClick = {
-                                            scope.launch {
-                                                val targetIndex = visiblePages.indexOf("apps")
-                                                if (targetIndex != -1) {
-                                                    pagerState.animateScrollToPage(targetIndex)
-                                                }
-                                            }
-                                        }
-                                    )
-                                }
-                                "apps" -> {
-                                    val viewModel: AppDrawerViewModel = viewModel(
-                                        factory = AppDrawerViewModelFactory(appRepository, settingsRepository, context)
-                                    )
-                                    val scope = rememberCoroutineScope()
-                                    val currentOpenFolderId by homeViewModel.openFolderId.collectAsStateWithLifecycle()
-                                    
-                                    AppDrawerScreen(
-                                        viewModel = viewModel,
-                                        onAppClick = { app ->
-                                            if (currentOpenFolderId != null) {
-                                                homeViewModel.addTile(app.packageName, app.name)
-                                                homeViewModel.openFolder(null)
-                                                scope.launch {
-                                                    val targetIndex = visiblePages.indexOf("desktop")
-                                                    if (targetIndex != -1) {
-                                                        pagerState.animateScrollToPage(targetIndex)
-                                                    }
-                                                }
-                                            } else {
-                                                val intent = context.packageManager.getLaunchIntentForPackage(app.packageName)
-                                                if (intent != null) {
-                                                    context.startActivity(intent)
-                                                }
-                                            }
-                                        },
-                                        onSettingsClick = {
-                                            backStack.add(Dest.Settings)
-                                        },
-                                        onPinToTaskbar = { _ ->
-                                            // Taskbar removed
-                                        },
-                                        onAddToHomeScreen = { app ->
-                                            homeViewModel.addTile(app.packageName, app.name)
-                                        }
-                                    )
-                                }
-                                "people" -> {
-                                    val viewModel: PeopleViewModel = viewModel(
-                                        factory = PeopleViewModelFactory(application)
-                                    )
-                                    PeopleHubScreen(viewModel = viewModel)
-                                }
-                                "notes" -> {
-                                    val viewModel: NotesViewModel = viewModel(
-                                        factory = object : ViewModelProvider.Factory {
-                                            override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                                                return NotesViewModel(settingsRepository) as T
-                                            }
-                                        }
-                                    )
-                                    NotesScreen(viewModel = viewModel)
-                                }
+                    HorizontalPager(
+                        state = pagerState,
+                        modifier = Modifier.fillMaxSize(),
+                        userScrollEnabled = !isDragging && !isEditMode
+                    ) { pageIndex ->
+                        val pageId = visiblePages.getOrNull(pageIndex) ?: ""
+                        when (pageId) {
+                            "board" -> {
+                                val viewModel: NewsFeedViewModel = viewModel(
+                                    factory = NewsFeedViewModelFactory(newsRepository, rssRepository, settingsRepository, context)
+                                )
+                                WidgetsBoardScreen(
+                                    newsViewModel = viewModel,
+                                    appWidgetHost = homeViewModel.appWidgetHost,
+                                    showTaskbar = showTaskbar
+                                )
                             }
-                        }
-
-                        // Taskbar Overlay
-                        if (showTaskbar) {
-                            WindowsDock(
-                                pinnedApps = pinnedApps,
-                                installedApps = installedApps,
-                                onAppClick = { packageName ->
-                                    val intent = context.packageManager.getLaunchIntentForPackage(packageName)
-                                    if (intent != null) {
-                                        context.startActivity(intent)
+                            "desktop" -> {
+                                val scope = rememberCoroutineScope()
+                                HomeScreen(
+                                    viewModel = homeViewModel,
+                                    onAppClick = { packageName ->
+                                        val intent = context.packageManager.getLaunchIntentForPackage(packageName)
+                                        if (intent != null) context.startActivity(intent)
+                                    },
+                                    onAddAppsClick = {
+                                        scope.launch {
+                                            val targetIndex = visiblePages.indexOf("apps")
+                                            if (targetIndex != -1) pagerState.animateScrollToPage(targetIndex)
+                                        }
                                     }
-                                },
-                                onStartClick = {
-                                    // Could toggle start menu or jump to app drawer
-                                    // For now, let's jump to App Drawer (page 2)
-                                    // pagerState.animateScrollToPage(2)
-                                },
-                                modifier = Modifier
-                                    .align(Alignment.BottomCenter)
-                                    .padding(bottom = 16.dp)
-                            )
+                                )
+                            }
+                            "apps" -> {
+                                val viewModel: AppDrawerViewModel = viewModel(
+                                    factory = AppDrawerViewModelFactory(appRepository, settingsRepository, context)
+                                )
+                                val scope = rememberCoroutineScope()
+                                val currentOpenFolderId by homeViewModel.openFolderId.collectAsStateWithLifecycle()
+                                
+                                AppDrawerScreen(
+                                    viewModel = viewModel,
+                                    onAppClick = { app ->
+                                        if (currentOpenFolderId != null) {
+                                            homeViewModel.addTile(app.packageName, app.name)
+                                            homeViewModel.openFolder(null)
+                                            scope.launch {
+                                                val targetIndex = visiblePages.indexOf("desktop")
+                                                if (targetIndex != -1) pagerState.animateScrollToPage(targetIndex)
+                                            }
+                                        } else {
+                                            val intent = context.packageManager.getLaunchIntentForPackage(app.packageName)
+                                            if (intent != null) context.startActivity(intent)
+                                        }
+                                    },
+                                    onSettingsClick = { backStack.add(Dest.Settings) },
+                                    onPinToTaskbar = { app -> viewModel.pinApp(app.packageName) },
+                                    onAddToHomeScreen = { app ->
+                                        homeViewModel.addTile(app.packageName, app.name)
+                                    }
+                                )
+                            }
+                            "people" -> {
+                                val viewModel: PeopleViewModel = viewModel(
+                                    factory = PeopleViewModelFactory(application)
+                                )
+                                PeopleHubScreen(viewModel = viewModel)
+                            }
+                            "notes" -> {
+                                val viewModel: NotesViewModel = viewModel(
+                                    factory = object : ViewModelProvider.Factory {
+                                        override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                                            return NotesViewModel(settingsRepository) as T
+                                        }
+                                    }
+                                )
+                                NotesScreen(viewModel = viewModel)
+                            }
                         }
                     }
                 } else {
@@ -328,40 +330,55 @@ fun MainShell(
                                 val settingsViewModel: SettingsViewModel = viewModel(
                                     factory = SettingsViewModelFactory(settingsRepository, appRepository)
                                 )
-                                SettingsScreen(
-                                    viewModel = settingsViewModel,
+                                SettingsScreen(viewModel = settingsViewModel, onBack = onBack)
+                            }
+                            is Dest.StartMenu -> NavEntry(key) {
+                                val drawerViewModel: AppDrawerViewModel = viewModel(
+                                    factory = AppDrawerViewModelFactory(appRepository, settingsRepository, context)
+                                )
+                                val scope = rememberCoroutineScope()
+                                StartMenuScreen(
+                                    viewModel = drawerViewModel,
+                                    onAppClick = { app ->
+                                        val intent = context.packageManager.getLaunchIntentForPackage(app.packageName)
+                                        if (intent != null) context.startActivity(intent)
+                                        onBack()
+                                    },
+                                    onAllAppsClick = {
+                                        onBack()
+                                        scope.launch {
+                                            val targetIndex = visiblePages.indexOf("apps")
+                                            if (targetIndex != -1) pagerState.animateScrollToPage(targetIndex)
+                                        }
+                                    },
+                                    onSettingsClick = { backStack.add(Dest.Settings) },
+                                    onPowerClick = { /* Handle Power */ },
                                     onBack = onBack
                                 )
                             }
-                            is Dest.StartMenu -> NavEntry(key) { StartMenuScreen() }
                             else -> NavEntry(key) { Text("Unknown Route") }
                         }
                     }
+                }
+                
+                // Centered Taskbar - ALWAYS visible if enabled, on top of everything
+                if (showTaskbar && currentRoute != Dest.StartMenu) {
+                    WindowsDock(
+                        pinnedApps = pinnedApps,
+                        installedApps = installedApps,
+                        onAppClick = { packageName ->
+                            val intent = context.packageManager.getLaunchIntentForPackage(packageName)
+                            if (intent != null) context.startActivity(intent)
+                        },
+                        onStartClick = { backStack.add(Dest.StartMenu) },
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 16.dp)
+                            .zIndex(1000f) // Ensure it's above NavDisplay
+                    )
                 }
             }
         }
     }
 }
 
-@Composable
-fun StartMenuScreen() {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text("Start Menu")
-    }
-}
-
-@androidx.compose.ui.tooling.preview.Preview(showBackground = true)
-@Composable
-fun MainShellPreview() {
-    val context = LocalContext.current
-    val backStack = remember { NavBackStack<NavKey>(Dest.Desktop) }
-    val settingsRepository = remember { com.example.windows11mobile.data.RealSettingsRepository(context) }
-    val appWidgetHost = remember { android.appwidget.AppWidgetHost(context, 1024) }
-    com.example.windows11mobile.ui.theme.Windows11MobileTheme {
-        MainShell(
-            backStack = backStack,
-            settingsRepository = settingsRepository,
-            onBack = {}
-        )
-    }
-}

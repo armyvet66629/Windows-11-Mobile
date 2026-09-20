@@ -26,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -66,6 +67,8 @@ fun AppDrawerScreen(
 
     val grouped = remember(apps) { apps.groupBy { it.name.firstOrNull()?.uppercaseChar() ?: '?' } }
     val letters = remember(grouped) { grouped.keys.toList().sorted() }
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val surfaceTint = if (isDark) Color.Black.copy(alpha = 0.4f) else Color.White.copy(alpha = 0.2f)
 
     Column(
         modifier = modifier.fillMaxSize()
@@ -134,6 +137,7 @@ fun AppDrawerScreen(
 
                 letters.forEach { letter ->
                     val appList = grouped[letter] ?: emptyList()
+
                     item {
                         FluentSurface(
                             modifier = Modifier
@@ -143,7 +147,7 @@ fun AppDrawerScreen(
                             alpha = tileOpacity,
                             effect = com.example.windows11mobile.ui.components.FluentEffect.ACRYLIC,
                             blurRadius = 120,
-                            tintColor = Color.Black.copy(alpha = 0.4f),
+                            tintColor = surfaceTint,
                             luminosityAlpha = 0.2f
                         ) {
                             Text(
@@ -165,7 +169,7 @@ fun AppDrawerScreen(
                             alpha = tileOpacity,
                             effect = com.example.windows11mobile.ui.components.FluentEffect.ACRYLIC,
                             blurRadius = 120,
-                            tintColor = Color.Black.copy(alpha = 0.4f),
+                            tintColor = surfaceTint,
                             luminosityAlpha = 0.2f
                         ) {
                             Column(

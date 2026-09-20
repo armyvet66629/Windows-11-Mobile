@@ -4,6 +4,7 @@ import android.app.Notification
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
@@ -139,6 +140,15 @@ class WindowsNotificationListener : NotificationListenerService() {
                     val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()
                     val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
                     
+                    val largeIcon = extras.getParcelable<Bitmap>(Notification.EXTRA_LARGE_ICON)
+                    val bigPicture = extras.getParcelable<Bitmap>(Notification.EXTRA_PICTURE)
+                    
+                    // Filter out some system-only noise but stay lenient for third-party apps
+                    val isLocalOnly = (notification.flags and Notification.FLAG_LOCAL_ONLY) != 0
+                    if (packageName == "com.android.systemui" && isLocalOnly) {
+                        return@mapNotNull null
+                    }
+
                     if (title == null && text == null) return@mapNotNull null
                     
                     NotificationData(
@@ -147,7 +157,9 @@ class WindowsNotificationListener : NotificationListenerService() {
                         summary = if (title != null && text != null) "$title: $text" else title ?: text,
                         sender = title,
                         content = text,
-                        postTime = sbn.postTime
+                        postTime = sbn.postTime,
+                        largeIcon = largeIcon,
+                        bigPicture = bigPicture
                     )
                 }.sortedByDescending { it.postTime }
 

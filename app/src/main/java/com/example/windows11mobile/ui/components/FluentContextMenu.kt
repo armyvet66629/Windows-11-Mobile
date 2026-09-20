@@ -1,5 +1,9 @@
 package com.example.windows11mobile.ui.components
 
+import android.graphics.RenderEffect
+import android.graphics.Shader
+import android.graphics.drawable.Drawable
+import android.os.Build
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -16,10 +20,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asComposeRenderEffect
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -30,6 +37,9 @@ import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
 import com.example.windows11mobile.ui.theme.SmokeDark
 import com.example.windows11mobile.ui.theme.SmokeLight
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 
 @Composable
 fun FluentContextMenu(
@@ -52,12 +62,27 @@ fun FluentContextMenu(
                 .fillMaxSize()
                 .zIndex(1000f)
         ) {
-            // Backdrop
+            // Blur Backdrop
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(if (isDark) SmokeDark.copy(alpha = 0.8f) else SmokeLight.copy(alpha = 0.6f))
+                    .then(
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                            Modifier.graphicsLayer {
+                                renderEffect = RenderEffect.createBlurEffect(
+                                    30f, 30f, Shader.TileMode.DECAL
+                                ).asComposeRenderEffect()
+                            }
+                        } else {
+                            Modifier.blur(20.dp)
+                        }
+                    )
+                    .background(if (isDark) SmokeDark.copy(alpha = 0.5f) else SmokeLight.copy(alpha = 0.4f))
                     .clickable(onClick = onDismiss, interactionSource = null, indication = null)
+                    .pointerInput(Unit) {
+                        // Intercept all vertical gestures on the backdrop to prevent notification pull-down
+                        detectVerticalDragGestures { _, _ -> }
+                    }
             )
 
             // Menu Panel
@@ -70,7 +95,12 @@ fun FluentContextMenu(
                         .width(340.dp)
                         .heightIn(max = 600.dp)
                         .padding(16.dp)
-                        .clickable(enabled = false) {}, // Consume clicks
+                        .clickable(enabled = false) {} // Consume clicks
+                        .pointerInput(Unit) {
+                            // Specifically intercept vertical drags here to ensure internal scrolling works 
+                            // without triggering the system/app-wide swipe-down gesture
+                            detectVerticalDragGestures { _, _ -> }
+                        },
                     shape = RoundedCornerShape(32.dp),
                     alpha = if (isDark) 0.5f else 0.85f,
                     effect = FluentEffect.ACRYLIC,
@@ -100,7 +130,7 @@ fun FluentContextMenu(
                             ) {
                                 when (icon) {
                                     is ImageVector -> Icon(icon, contentDescription = null, modifier = Modifier.size(28.dp))
-                                    is android.graphics.drawable.Drawable -> AsyncImage(model = icon, contentDescription = null, modifier = Modifier.size(52.dp))
+                                    is Drawable -> AsyncImage(model = icon, contentDescription = null, modifier = Modifier.size(52.dp))
                                     else -> Icon(Icons.Rounded.Apps, contentDescription = null, modifier = Modifier.size(28.dp))
                                 }
                             }

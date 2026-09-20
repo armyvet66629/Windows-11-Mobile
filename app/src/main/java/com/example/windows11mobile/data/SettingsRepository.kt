@@ -30,9 +30,12 @@ interface SettingsRepository {
     val swipeDownForNotifications: Flow<Boolean>
     val showMoreTiles: Flow<Boolean>
     val tilePictureEnabled: Flow<Boolean>
+    val tileBlurRadius: Flow<Float>
+    val homeScreenBlurEnabled: Flow<Boolean>
+    val useSystemWallpaper: Flow<Boolean>
 
     suspend fun setDarkMode(isDarkMode: Boolean)
-    suspend fun setWallpaperUri(uri: String)
+    suspend fun setWallpaperUri(uri: String?)
     suspend fun pinApp(packageName: String)
     suspend fun unpinApp(packageName: String)
     suspend fun setHomeTiles(tilesJson: String)
@@ -55,6 +58,9 @@ interface SettingsRepository {
     suspend fun setSwipeDownForNotifications(enabled: Boolean)
     suspend fun setShowMoreTiles(enabled: Boolean)
     suspend fun setTilePictureEnabled(enabled: Boolean)
+    suspend fun setTileBlurRadius(radius: Float)
+    suspend fun setHomeScreenBlurEnabled(enabled: Boolean)
+    suspend fun setUseSystemWallpaper(enabled: Boolean)
 
     companion object {
         val IS_DARK_MODE = booleanPreferencesKey("is_dark_mode")
@@ -77,6 +83,9 @@ interface SettingsRepository {
         val SWIPE_DOWN_FOR_NOTIFICATIONS = booleanPreferencesKey("swipe_down_for_notifications")
         val SHOW_MORE_TILES = booleanPreferencesKey("show_more_tiles")
         val TILE_PICTURE_ENABLED = booleanPreferencesKey("tile_picture_enabled")
+        val TILE_BLUR_RADIUS = floatPreferencesKey("tile_blur_radius")
+        val HOME_SCREEN_BLUR_ENABLED = booleanPreferencesKey("home_screen_blur_enabled")
+        val USE_SYSTEM_WALLPAPER = booleanPreferencesKey("use_system_wallpaper")
         
         val DEFAULT_PINNED_APPS = setOf(
             "com.android.settings",
@@ -177,15 +186,31 @@ class RealSettingsRepository(private val context: Context) : SettingsRepository 
         preferences[SettingsRepository.TILE_PICTURE_ENABLED] ?: false
     }
 
+    override val tileBlurRadius: Flow<Float> = dataStore.data.map { preferences ->
+        preferences[SettingsRepository.TILE_BLUR_RADIUS] ?: 120f // Standard high-quality blur
+    }
+
+    override val homeScreenBlurEnabled: Flow<Boolean> = dataStore.data.map { preferences ->
+        preferences[SettingsRepository.HOME_SCREEN_BLUR_ENABLED] ?: true
+    }
+
+    override val useSystemWallpaper: Flow<Boolean> = dataStore.data.map { preferences ->
+        preferences[SettingsRepository.USE_SYSTEM_WALLPAPER] ?: false
+    }
+
     override suspend fun setDarkMode(isDarkMode: Boolean) {
         dataStore.edit { preferences ->
             preferences[SettingsRepository.IS_DARK_MODE] = isDarkMode
         }
     }
 
-    override suspend fun setWallpaperUri(uri: String) {
+    override suspend fun setWallpaperUri(uri: String?) {
         dataStore.edit { preferences ->
-            preferences[SettingsRepository.WALLPAPER_URI] = uri
+            if (uri == null) {
+                preferences.remove(SettingsRepository.WALLPAPER_URI)
+            } else {
+                preferences[SettingsRepository.WALLPAPER_URI] = uri
+            }
         }
     }
 
@@ -333,6 +358,24 @@ class RealSettingsRepository(private val context: Context) : SettingsRepository 
     override suspend fun setTilePictureEnabled(enabled: Boolean) {
         dataStore.edit { preferences ->
             preferences[SettingsRepository.TILE_PICTURE_ENABLED] = enabled
+        }
+    }
+
+    override suspend fun setTileBlurRadius(radius: Float) {
+        dataStore.edit { preferences ->
+            preferences[SettingsRepository.TILE_BLUR_RADIUS] = radius
+        }
+    }
+
+    override suspend fun setHomeScreenBlurEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[SettingsRepository.HOME_SCREEN_BLUR_ENABLED] = enabled
+        }
+    }
+
+    override suspend fun setUseSystemWallpaper(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[SettingsRepository.USE_SYSTEM_WALLPAPER] = enabled
         }
     }
 }

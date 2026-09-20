@@ -1,5 +1,6 @@
 package com.example.windows11mobile.data
 
+import android.graphics.Bitmap
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
@@ -9,7 +10,9 @@ data class NotificationData(
     val summary: String?,
     val sender: String? = null,
     val content: String? = null,
-    val postTime: Long = 0L
+    val postTime: Long = 0L,
+    val largeIcon: Bitmap? = null,
+    val bigPicture: Bitmap? = null
 )
 
 data class AppNotificationData(

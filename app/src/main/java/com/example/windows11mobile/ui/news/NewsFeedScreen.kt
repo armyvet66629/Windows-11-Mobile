@@ -92,7 +92,7 @@ fun NewsFeedScreen(
                     .fillMaxWidth(),
                 alpha = 0.3f,
                 effect = com.example.windows11mobile.ui.components.FluentEffect.ACRYLIC,
-                blurRadius = 80,
+                blurRadius = 120,
                 tintColor = Color.Black.copy(alpha = 0.2f),
                 luminosityAlpha = 0.1f,
                 shape = RoundedCornerShape(8.dp)
@@ -142,7 +142,7 @@ fun NewsCard(
         shape = RoundedCornerShape(24.dp),
         alpha = 0.25f, // More subtle
         effect = com.example.windows11mobile.ui.components.FluentEffect.ACRYLIC,
-        blurRadius = 60
+        blurRadius = 120
     ) {
         Column {
             Box(

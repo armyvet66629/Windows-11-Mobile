@@ -257,6 +257,12 @@ fun AdvancedFluentMenu(
 
         // Category-Specific Actions
         val pkg = packageName?.lowercase() ?: ""
+        
+        // Blurred Header for Sections
+        if (specialType != null || shortcuts.isNotEmpty() || !isFromHome) {
+             Spacer(modifier = Modifier.height(8.dp))
+        }
+
         when {
             specialType == HomeTile.TYPE_WEATHER || specialType == HomeTile.TYPE_CLOCK_WEATHER -> {
                 ActionButton(
@@ -271,7 +277,7 @@ fun AdvancedFluentMenu(
                     onClick = onRefreshTile
                 )
                 Spacer(modifier = Modifier.height(10.dp))
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.1f))
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.08f))
             }
             specialType == HomeTile.TYPE_PHOTOS -> {
                 ActionButton(
@@ -280,7 +286,7 @@ fun AdvancedFluentMenu(
                     onClick = { /* Implement */ }
                 )
                 Spacer(modifier = Modifier.height(10.dp))
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.1f))
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.08f))
             }
             pkg.contains("dialer") || pkg.contains("phone") -> {
                 ActionButton(
@@ -295,7 +301,7 @@ fun AdvancedFluentMenu(
                     }
                 )
                 Spacer(modifier = Modifier.height(10.dp))
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.1f))
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.08f))
             }
             pkg.contains("messaging") || pkg.contains("message") || pkg.contains("sms") -> {
                 ActionButton(
@@ -310,7 +316,7 @@ fun AdvancedFluentMenu(
                     }
                 )
                 Spacer(modifier = Modifier.height(10.dp))
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.1f))
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.08f))
             }
             pkg.contains("calendar") -> {
                 ActionButton(
@@ -327,7 +333,7 @@ fun AdvancedFluentMenu(
                     }
                 )
                 Spacer(modifier = Modifier.height(10.dp))
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.1f))
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.08f))
             }
             pkg.contains("camera") -> {
                 ActionButton(
@@ -356,7 +362,7 @@ fun AdvancedFluentMenu(
                     }
                 )
                 Spacer(modifier = Modifier.height(10.dp))
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.1f))
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.08f))
             }
             pkg.contains("mail") || pkg.contains("gmail") || pkg.contains("outlook") -> {
                 ActionButton(
@@ -372,7 +378,7 @@ fun AdvancedFluentMenu(
                     }
                 )
                 Spacer(modifier = Modifier.height(10.dp))
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.1f))
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.08f))
             }
             pkg.contains("maps") || pkg.contains("navigation") -> {
                 ActionButton(
@@ -389,7 +395,7 @@ fun AdvancedFluentMenu(
                     }
                 )
                 Spacer(modifier = Modifier.height(10.dp))
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.1f))
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.08f))
             }
             pkg.contains("chrome") || pkg.contains("browser") || pkg.contains("edge") -> {
                 ActionButton(
@@ -405,7 +411,7 @@ fun AdvancedFluentMenu(
                     }
                 )
                 Spacer(modifier = Modifier.height(10.dp))
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.1f))
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.08f))
             }
         }
 
@@ -485,7 +491,7 @@ fun AdvancedFluentMenu(
                 )
                 Spacer(modifier = Modifier.height(10.dp))
             }
-            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.1f))
+            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.08f))
         }
 
         // Action Buttons
@@ -576,20 +582,28 @@ fun QuickActionButton(
     modifier: Modifier = Modifier,
     tint: Color = MaterialTheme.colorScheme.onSurface
 ) {
-    Box(
-        modifier = modifier
-            .size(64.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(Color.White.copy(alpha = 0.08f))
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
+    FluentSurface(
+        modifier = modifier.size(64.dp),
+        shape = RoundedCornerShape(16.dp),
+        alpha = 0.15f,
+        effect = FluentEffect.ACRYLIC,
+        blurRadius = 60,
+        tintColor = Color.White.copy(alpha = 0.05f),
+        luminosityAlpha = 0.1f
     ) {
-        FluentIcon(
-            imageVector = icon,
-            contentDescription = contentDescription,
-            size = 24.dp,
-            tint = tint
-        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clickable(onClick = onClick),
+            contentAlignment = Alignment.Center
+        ) {
+            FluentIcon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                size = 26.dp,
+                tint = tint
+            )
+        }
     }
 }
 
@@ -601,35 +615,40 @@ fun ResizeButton(
     onClick: () -> Unit
 ) {
     val isSelected = size == currentSize
-    val bgColor = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.25f) else Color.White.copy(alpha = 0.05f)
-
-    Box(
+    
+    FluentSurface(
         modifier = modifier
             .height(52.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(bgColor)
-            .clickable(onClick = onClick)
-            .padding(4.dp),
-        contentAlignment = Alignment.Center
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(12.dp),
+        alpha = if (isSelected) 0.3f else 0.1f,
+        effect = FluentEffect.ACRYLIC,
+        blurRadius = 40,
+        tintColor = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.05f)
     ) {
-        val iconSize = when(size) {
-            TileSize.SMALL -> 12.dp
-            TileSize.MEDIUM -> 18.dp
-            TileSize.WIDE -> 18.dp
-            TileSize.LARGE -> 24.dp
-        }
-        
         Box(
-            modifier = Modifier
-                .size(
-                    width = if (size == TileSize.WIDE) 28.dp else iconSize,
-                    height = iconSize
-                )
-                .background(
-                    if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f), 
-                    RoundedCornerShape(2.dp)
-                )
-        )
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            val iconSize = when(size) {
+                TileSize.SMALL -> 12.dp
+                TileSize.MEDIUM -> 18.dp
+                TileSize.WIDE -> 18.dp
+                TileSize.LARGE -> 24.dp
+            }
+            
+            Box(
+                modifier = Modifier
+                    .size(
+                        width = if (size == TileSize.WIDE) 28.dp else iconSize,
+                        height = iconSize
+                    )
+                    .background(
+                        if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f), 
+                        RoundedCornerShape(2.dp)
+                    )
+            )
+        }
     }
 }
 
