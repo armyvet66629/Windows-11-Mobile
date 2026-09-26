@@ -1,5 +1,6 @@
 package com.example.windows11mobile.data
 
+import android.Manifest
 import android.content.Context
 import android.database.ContentObserver
 import android.net.Uri
@@ -10,12 +11,16 @@ import android.provider.ContactsContract
 import android.provider.Telephony
 import androidx.core.content.ContextCompat
 import android.content.pm.PackageManager
+import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.UUID
 
 data class Contact(
@@ -37,6 +42,21 @@ data class RecentActivity(
     val address: String? = null // Number for both
 )
 
+data class PhoneCallItem(
+    val name: String,
+    val number: String,
+    val summary: String,
+    val timeFormatted: String,
+    val isMissed: Boolean,
+    val isVoicemail: Boolean
+)
+
+data class PhoneTileData(
+    val missedCallsCount: Int = 0,
+    val voicemailCount: Int = 0,
+    val recentCalls: List<PhoneCallItem> = emptyList()
+)
+
 enum class ActivityType {
     CALL, MESSAGE
 }
@@ -47,6 +67,9 @@ class ContactsRepository private constructor(private val context: Context) {
 
     private val _recentActivity = MutableStateFlow<List<RecentActivity>>(emptyList())
     val recentActivity: StateFlow<List<RecentActivity>> = _recentActivity
+
+    private val _phoneTileData = MutableStateFlow(PhoneTileData())
+    val phoneTileData: StateFlow<PhoneTileData> = _phoneTileData
 
     private val _lastSyncTime = MutableStateFlow(0L)
     val lastSyncTime: StateFlow<Long> = _lastSyncTime
@@ -336,8 +359,113 @@ class ContactsRepository private constructor(private val context: Context) {
             .take(50)
             
         _recentActivity.value = sorted
+        _phoneTileData.value = getPhoneTileData()
         _lastSyncTime.value = System.currentTimeMillis()
-        android.util.Log.d("ContactsRepository", "RecentActivity: Update complete. Final count: ${sorted.size} at ${_lastSyncTime.value}")
+        Log.d("ContactsRepository", "RecentActivity: Update complete. Final count: ${sorted.size} at ${_lastSyncTime.value}")
+    }
+
+    fun getPhoneTileData(): PhoneTileData {
+        val hasCallLog = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED
+        if (!hasCallLog) return PhoneTileData()
+
+        var missedCount = 0
+        var voicemailCount = 0
+        val calls = mutableListOf<PhoneCallItem>()
+
+        try {
+            val missedCursor = context.contentResolver.query(
+                CallLog.Calls.CONTENT_URI,
+                arrayOf(CallLog.Calls._ID),
+                "${CallLog.Calls.TYPE} = ? AND ${CallLog.Calls.NEW} = 1",
+                arrayOf(CallLog.Calls.MISSED_TYPE.toString()),
+                null
+            )
+            missedCount = missedCursor?.use { it.count } ?: 0
+        } catch (_: Exception) {
+            try {
+                val missedCursor = context.contentResolver.query(
+                    CallLog.Calls.CONTENT_URI,
+                    arrayOf(CallLog.Calls._ID),
+                    "${CallLog.Calls.TYPE} = ?",
+                    arrayOf(CallLog.Calls.MISSED_TYPE.toString()),
+                    null
+                )
+                missedCount = missedCursor?.use { it.count } ?: 0
+            } catch (_: Exception) {}
+        }
+
+        try {
+            val vmCursor = context.contentResolver.query(
+                CallLog.Calls.CONTENT_URI,
+                arrayOf(CallLog.Calls._ID),
+                "${CallLog.Calls.TYPE} = ?",
+                arrayOf(CallLog.Calls.VOICEMAIL_TYPE.toString()),
+                null
+            )
+            voicemailCount = vmCursor?.use { it.count } ?: 0
+        } catch (_: Exception) {}
+
+        try {
+            val projection = arrayOf(
+                CallLog.Calls._ID,
+                CallLog.Calls.CACHED_NAME,
+                CallLog.Calls.NUMBER,
+                CallLog.Calls.TYPE,
+                CallLog.Calls.DATE
+            )
+            context.contentResolver.query(
+                CallLog.Calls.CONTENT_URI,
+                projection,
+                null,
+                null,
+                "${CallLog.Calls.DATE} DESC LIMIT 10"
+            )?.use { cursor ->
+                val nameIdx = cursor.getColumnIndex(CallLog.Calls.CACHED_NAME)
+                val numIdx = cursor.getColumnIndex(CallLog.Calls.NUMBER)
+                val typeIdx = cursor.getColumnIndex(CallLog.Calls.TYPE)
+                val dateIdx = cursor.getColumnIndex(CallLog.Calls.DATE)
+
+                val timeFormat = SimpleDateFormat("h:mm a", Locale.getDefault())
+
+                while (cursor.moveToNext()) {
+                    val number = if (numIdx != -1) cursor.getString(numIdx) ?: "" else ""
+                    val cachedName = if (nameIdx != -1) cursor.getString(nameIdx) else null
+                    val callType = if (typeIdx != -1) cursor.getInt(typeIdx) else -1
+                    val dateMs = if (dateIdx != -1) cursor.getLong(dateIdx) else 0L
+
+                    val displayName = if (!cachedName.isNullOrBlank()) cachedName else (if (number.isNotBlank()) number else "Unknown")
+                    val isMissed = callType == CallLog.Calls.MISSED_TYPE
+                    val isVoicemail = callType == CallLog.Calls.VOICEMAIL_TYPE
+
+                    val summaryText = when (callType) {
+                        CallLog.Calls.INCOMING_TYPE -> "Incoming call"
+                        CallLog.Calls.OUTGOING_TYPE -> "Outgoing call"
+                        CallLog.Calls.MISSED_TYPE -> "Missed call"
+                        CallLog.Calls.VOICEMAIL_TYPE -> "Voicemail"
+                        else -> "Call"
+                    }
+
+                    val timeStr = if (dateMs > 0) timeFormat.format(Date(dateMs)) else ""
+
+                    calls.add(
+                        PhoneCallItem(
+                            name = displayName,
+                            number = number,
+                            summary = summaryText,
+                            timeFormatted = timeStr,
+                            isMissed = isMissed,
+                            isVoicemail = isVoicemail
+                        )
+                    )
+                }
+            }
+        } catch (_: Exception) {}
+
+        return PhoneTileData(
+            missedCallsCount = missedCount,
+            voicemailCount = voicemailCount,
+            recentCalls = calls
+        )
     }
 
     private fun formatDuration(seconds: Long): String {

@@ -119,6 +119,7 @@ fun MainShell(
         }
     }
 
+    val tilePictureEnabled by settingsRepository.tilePictureEnabled.collectAsStateWithLifecycle(initialValue = false)
     val wallpaperUri by settingsRepository.wallpaperUri.collectAsStateWithLifecycle(initialValue = null)
     val useSystemWallpaper by settingsRepository.useSystemWallpaper.collectAsStateWithLifecycle(initialValue = false)
     val showTaskbar by settingsRepository.showTaskbar.collectAsStateWithLifecycle(initialValue = false)
@@ -128,9 +129,6 @@ fun MainShell(
     val isEditMode by homeViewModel.isEditMode.collectAsStateWithLifecycle()
     val pageOrder by settingsRepository.pageOrder.collectAsStateWithLifecycle(initialValue = SettingsRepository.DEFAULT_PAGE_ORDER)
     val hiddenPages by settingsRepository.hiddenPages.collectAsStateWithLifecycle(initialValue = emptySet())
-    val tilePictureEnabled by settingsRepository.tilePictureEnabled.collectAsStateWithLifecycle(initialValue = false)
-    val tileBlurRadius by settingsRepository.tileBlurRadius.collectAsStateWithLifecycle(initialValue = 60f)
-    val homeScreenBlurEnabled by settingsRepository.homeScreenBlurEnabled.collectAsStateWithLifecycle(initialValue = true)
     
     val visiblePages = remember(pageOrder, hiddenPages) {
         pageOrder.filter { it !in hiddenPages || it == "desktop" || it == "apps" }
@@ -185,52 +183,35 @@ fun MainShell(
     ) { innerPadding ->
         Box(modifier = Modifier.fillMaxSize().padding(bottom = innerPadding.calculateBottomPadding())) {
             // Background Wallpaper Logic
-            if (tilePictureEnabled) {
-                // Strictly black background for Picture Mode to prevent ghosting/overlap
-                Box(modifier = Modifier.fillMaxSize().background(Color.Black))
-            } else {
-                // Resolve wallpaper source: Custom URI or System Drawable
-                val wallpaperSource = remember(wallpaperUri, useSystemWallpaper) {
-                    if (!useSystemWallpaper && wallpaperUri != null) {
-                        wallpaperUri
-                    } else {
-                        try {
-                            WallpaperManager.getInstance(context).drawable
-                        } catch (e: Exception) {
-                            null
-                        }
+            // Resolve wallpaper source: Custom URI or System Drawable
+            val wallpaperSource = remember(wallpaperUri, useSystemWallpaper) {
+                if (!useSystemWallpaper && wallpaperUri != null) {
+                    wallpaperUri
+                } else {
+                    try {
+                        WallpaperManager.getInstance(context).drawable
+                    } catch (e: Exception) {
+                        null
                     }
                 }
+            }
 
-                if (wallpaperSource != null) {
-                    AsyncImage(
-                        model = wallpaperSource,
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize().graphicsLayer {
-                            if (homeScreenBlurEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                                 renderEffect = RenderEffect.createBlurEffect(
-                                    tileBlurRadius / 4f, tileBlurRadius / 4f, Shader.TileMode.CLAMP
-                                 ).asComposeRenderEffect()
-                            }
-                        },
-                        contentScale = ContentScale.Crop
-                    )
-                    Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)))
-                } else {
-                    // PREMIUM GRADIENT FALLBACK
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(
-                                Brush.verticalGradient(
-                                    colors = listOf(
-                                        MaterialTheme.colorScheme.surfaceVariant,
-                                        MaterialTheme.colorScheme.surface
-                                    )
-                                )
-                            )
-                    )
-                }
+            if (wallpaperSource != null && !tilePictureEnabled) {
+                AsyncImage(
+                    model = wallpaperSource,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+                // Darken slightly to make Acrylic tiles pop
+                Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)))
+            } else {
+                // SOLID DARK BACKGROUND FOR TILE PICTURE MODE OR FALLBACK
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black)
+                )
             }
 
             Box(modifier = Modifier.fillMaxSize()) {

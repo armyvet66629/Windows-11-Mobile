@@ -80,6 +80,15 @@ class SettingsViewModel(
     val useSystemWallpaper: StateFlow<Boolean> = repository.useSystemWallpaper
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    val accentColorOverlayEnabled: StateFlow<Boolean> = repository.accentColorOverlayEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    val solidTilesEnabled: StateFlow<Boolean> = repository.solidTilesEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    val squareTilesEnabled: StateFlow<Boolean> = repository.squareTilesEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
     val rssFeeds: StateFlow<Set<String>> = repository.rssFeeds
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
 
@@ -116,6 +125,24 @@ class SettingsViewModel(
     fun setAccentColor(color: Int) {
         viewModelScope.launch {
             repository.setAccentColor(color)
+        }
+    }
+
+    fun setAccentColorOverlayEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            repository.setAccentColorOverlayEnabled(enabled)
+        }
+    }
+
+    fun setSolidTilesEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            repository.setSolidTilesEnabled(enabled)
+        }
+    }
+
+    fun setSquareTilesEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            repository.setSquareTilesEnabled(enabled)
         }
     }
 

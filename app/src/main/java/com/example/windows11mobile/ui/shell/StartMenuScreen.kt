@@ -45,6 +45,7 @@ fun StartMenuScreen(
 ) {
     val apps by viewModel.filteredApps.collectAsStateWithLifecycle()
     val tileOpacity by viewModel.tileOpacity.collectAsStateWithLifecycle()
+    val tileBlurRadius by viewModel.tileBlurRadius.collectAsStateWithLifecycle()
     
     // We'll treat the first 18 apps as "Pinned" for the start menu
     val pinnedApps = remember(apps) { apps.take(18) }
@@ -52,7 +53,8 @@ fun StartMenuScreen(
     // Recent/Recommended apps (taking the next 6)
     val recommendedApps = remember(apps) { apps.drop(18).take(6) }
     val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-    val surfaceTint = if (isDark) Color.Black.copy(alpha = 0.4f) else Color.White.copy(alpha = 0.3f)
+    val surfaceTint = if (isDark) Color.Black.copy(alpha = 0.3f * tileOpacity) else Color(0xFFB0B0B0).copy(alpha = 0.25f * tileOpacity)
+    val luminosityAlpha = if (isDark) 0.15f * tileOpacity else 0.25f * tileOpacity
 
     Box(
         modifier = Modifier
@@ -69,37 +71,44 @@ fun StartMenuScreen(
                 .fillMaxHeight(0.85f)
                 .clickable(enabled = false) { }, // Consume clicks
             shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-            alpha = 0.9f,
+            alpha = 0.92f, // Slightly higher for more depth
             effect = FluentEffect.ACRYLIC,
-            blurRadius = 150,
+            blurRadius = tileBlurRadius.toInt(),
             tintColor = surfaceTint,
-            luminosityAlpha = 0.2f
+            luminosityAlpha = luminosityAlpha,
+            borderAlpha = 0.4f // Stronger edge
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(horizontal = 24.dp)
             ) {
-                // Search Bar Placeholder (matches App Drawer style)
+                // Search Bar (matches App Drawer style)
                 Spacer(modifier = Modifier.height(24.dp))
                 FluentSurface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(24.dp),
-                    alpha = 0.1f,
-                    effect = FluentEffect.MICA,
-                    blurRadius = 0,
-                    tintColor = Color.White.copy(alpha = 0.1f)
+                    alpha = tileOpacity,
+                    effect = FluentEffect.ACRYLIC,
+                    blurRadius = tileBlurRadius.toInt(),
+                    tintColor = surfaceTint,
+                    luminosityAlpha = luminosityAlpha,
+                    borderAlpha = 0.15f
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Rounded.Search, contentDescription = null, tint = Color.White.copy(alpha = 0.6f))
+                        Icon(
+                            imageVector = Icons.Rounded.Search, 
+                            contentDescription = null, 
+                            tint = if (isDark) Color.White.copy(alpha = 0.6f) else Color.Black.copy(alpha = 0.6f)
+                        )
                         Spacer(modifier = Modifier.width(12.dp))
                         Text(
                             "Search for apps, settings, and documents",
                             style = MaterialTheme.typography.bodyLarge,
-                            color = Color.White.copy(alpha = 0.6f)
+                            color = if (isDark) Color.White.copy(alpha = 0.6f) else Color.Black.copy(alpha = 0.6f)
                         )
                     }
                 }
@@ -117,7 +126,7 @@ fun StartMenuScreen(
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Black,
                         letterSpacing = 1.5.sp,
-                        color = Color.White
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     TextButton(
                         onClick = onAllAppsClick,
@@ -145,7 +154,7 @@ fun StartMenuScreen(
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Black,
                     letterSpacing = 1.5.sp,
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.padding(top = 24.dp, bottom = 16.dp)
                 )
 
@@ -164,7 +173,7 @@ fun StartMenuScreen(
                 }
 
                 // Footer Section
-                HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -187,10 +196,10 @@ fun StartMenuScreen(
                                 .background(MaterialTheme.colorScheme.primary),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Rounded.Person, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                            Icon(Icons.Rounded.Person, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(20.dp))
                         }
                         Spacer(modifier = Modifier.width(12.dp))
-                        Text("User Name", fontWeight = FontWeight.Bold, color = Color.White)
+                        Text("User Name", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                     }
 
                     // Power Button
@@ -198,7 +207,7 @@ fun StartMenuScreen(
                         onClick = onPowerClick,
                         modifier = Modifier.clip(RoundedCornerShape(8.dp))
                     ) {
-                        Icon(Icons.Rounded.PowerSettingsNew, contentDescription = "Power", tint = Color.White)
+                        Icon(Icons.Rounded.PowerSettingsNew, contentDescription = "Power", tint = MaterialTheme.colorScheme.onSurface)
                     }
                 }
             }
@@ -233,7 +242,7 @@ fun StartMenuAppItem(app: AppInfo, onClick: () -> Unit) {
             textAlign = TextAlign.Center,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            color = Color.White
+            color = MaterialTheme.colorScheme.onSurface
         )
     }
 }
@@ -258,8 +267,8 @@ fun RecommendedItem(app: AppInfo, modifier: Modifier = Modifier, onClick: () -> 
         }
         Spacer(modifier = Modifier.width(12.dp))
         Column {
-            Text(app.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = Color.White)
-            Text("Recently added", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.6f))
+            Text(app.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+            Text("Recently added", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
         }
     }
 }

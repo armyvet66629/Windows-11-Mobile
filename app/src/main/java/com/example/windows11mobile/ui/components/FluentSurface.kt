@@ -37,8 +37,6 @@ enum class FluentEffect {
 
 /**
  * A highly customizable Fluent Surface that implements the Acrylic and Mica effects.
- * For high-fidelity Acrylic (like in Windows 11), use a high [blurRadius] (60-100)
- * and adjust [luminosityAlpha].
  */
 @Composable
 fun FluentSurface(
@@ -71,13 +69,14 @@ fun FluentSurface(
     }
 
     val isDark = color.luminance() < 0.5f
+    val blurIntensity = (blurRadius.toFloat() / 250f).coerceIn(0f, 1f)
 
     Box(
         modifier = modifier
             .shadow(
                 elevation = when (effect) {
                     FluentEffect.MICA -> 2.dp
-                    FluentEffect.ACRYLIC -> 24.dp
+                    FluentEffect.ACRYLIC -> (24.dp * (1f + blurIntensity)).coerceAtMost(48.dp)
                     FluentEffect.SMOKE -> 32.dp
                     FluentEffect.NONE -> 0.dp
                 },
@@ -97,19 +96,20 @@ fun FluentSurface(
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                             Modifier.graphicsLayer {
                                 if (blurRadius > 0) {
-                                    // Non-linear intensification: boost radius at higher scales
-                                    val radiusMultiplier = 1f + (blurRadius.toFloat() / 500f)
+                                    // Balanced Gaussian optimization
+                                    val radiusMultiplier = 1.2f + (blurRadius.toFloat() / 500f)
                                     val radius = blurRadius.toFloat() * radiusMultiplier
                                     
-                                    // 1.1 Deep Blur Effect
                                     val blur = RenderEffect.createBlurEffect(radius, radius, Shader.TileMode.CLAMP)
                                     
-                                    // 1.2 Saturation & Contrast boost for Acrylic vibrancy
                                     val matrix = ColorMatrix().apply {
-                                        // Dynamic saturation: Higher blur needs more color recovery
-                                        setSaturation(1.8f + (blurRadius.toFloat() / 500f)) 
-                                        val contrast = 1.2f + (blurRadius.toFloat() / 800f)
+                                        // Natural saturation to avoid blue/unnatural tints
+                                        setSaturation(1.2f + (blurRadius.toFloat() / 1000f)) 
+                                        
+                                        // minimal contrast boost
+                                        val contrast = 1.05f + (blurRadius.toFloat() / 1500f)
                                         val translate = (-0.5f * contrast + 0.5f) * 255f
+                                        
                                         postConcat(
                                             ColorMatrix(floatArrayOf(
                                                 contrast, 0f, 0f, 0f, translate,
@@ -122,8 +122,6 @@ fun FluentSurface(
                                     val colorFilter = RenderEffect.createColorFilterEffect(
                                         ColorMatrixColorFilter(matrix)
                                     )
-                                    
-                                    // Chain them: Blur -> Enhance Colors
                                     renderEffect = RenderEffect.createChainEffect(blur, colorFilter).asComposeRenderEffect()
                                 }
                             }
@@ -134,26 +132,38 @@ fun FluentSurface(
             )
         }
 
-        // 2. Luminosity Layer (The "Glow" behind the tint) - Intensifies with blur radius
-        val blurIntensity = (blurRadius.toFloat() / 250f).coerceIn(0f, 1f)
+        // 2. Gaussian Luminosity & Material Layer (The "Glow" behind the tint)
         Box(
             modifier = Modifier
                 .matchParentSize()
                 .background(
-                    if (isDark) Color.Black.copy(alpha = (luminosityAlpha * (1.3f + blurIntensity * 0.5f)).coerceAtMost(0.6f))
-                    else Color.White.copy(alpha = (luminosityAlpha * (1.8f + blurIntensity * 0.7f)).coerceAtMost(0.7f))
+                    if (isDark) {
+                        Brush.radialGradient(
+                            colors = listOf(
+                                Color.Black.copy(alpha = (luminosityAlpha * (1.1f + blurIntensity * 0.2f)).coerceAtMost(0.45f)),
+                                Color.Black.copy(alpha = (luminosityAlpha * (1.3f + blurIntensity * 0.3f)).coerceAtMost(0.55f))
+                            )
+                        )
+                    } else {
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color(0xFFD0D0D0).copy(alpha = (luminosityAlpha * (1.3f + blurIntensity * 0.3f)).coerceAtMost(0.5f)),
+                                Color(0xFFB0B0B0).copy(alpha = (luminosityAlpha * (1.6f + blurIntensity * 0.4f)).coerceAtMost(0.6f))
+                            )
+                        )
+                    }
                 )
         )
 
-        // 3. Tint Layer
+        // 3. Tint & Material Layer (Acrylic vs Mica differentiation)
         Box(
             modifier = Modifier
                 .matchParentSize()
                 .background(
                     when (effect) {
-                        FluentEffect.MICA -> color.copy(alpha = 0.85f)
-                        FluentEffect.ACRYLIC -> color.copy(alpha = alpha * 0.9f)
-                        FluentEffect.SMOKE -> if (isDark) Color.Black.copy(alpha = 0.6f) else Color.Black.copy(alpha = 0.4f)
+                        FluentEffect.MICA -> color.copy(alpha = (0.88f + blurIntensity * 0.05f).coerceAtMost(0.96f))
+                        FluentEffect.ACRYLIC -> color.copy(alpha = (alpha * 0.85f).coerceAtLeast(0.1f))
+                        FluentEffect.SMOKE -> if (isDark) Color.Black.copy(alpha = 0.65f) else Color.Black.copy(alpha = 0.45f)
                         FluentEffect.NONE -> color.copy(alpha = alpha)
                     }
                 )
@@ -202,27 +212,27 @@ fun FluentSurface(
             )
         }
 
-        // 6. Fluent Border (Inner Stroke)
+        // 6. Fluent Border (Defined Edge)
         Box(
             modifier = Modifier
                 .matchParentSize()
                 .border(
-                    width = 0.8.dp,
+                    width = 1.2.dp, // Thicker, clearly defined edge
                     brush = if (lightRevealPosition != null) {
                         Brush.radialGradient(
                             colors = listOf(
-                                Color.White.copy(alpha = 0.5f),
-                                Color.White.copy(alpha = 0.1f),
+                                Color.White.copy(alpha = 0.6f),
+                                Color.White.copy(alpha = 0.2f),
                                 Color.Transparent
                             ),
                             center = lightRevealPosition,
-                            radius = 240f
+                            radius = 300f
                         )
                     } else {
                         Brush.linearGradient(
                             listOf(
-                                Color.White.copy(alpha = borderAlpha),
-                                Color.White.copy(alpha = borderAlpha * 0.4f),
+                                Color.White.copy(alpha = borderAlpha * 1.2f),
+                                Color.White.copy(alpha = borderAlpha * 0.5f),
                                 Color.Transparent
                             )
                         )

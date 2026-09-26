@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -50,8 +51,11 @@ fun StartSearchOverlay(
             alpha = 0.95f,
             effect = FluentEffect.ACRYLIC,
             blurRadius = 150,
-            tintColor = Color.Black.copy(alpha = 0.3f),
-            luminosityAlpha = 0.2f
+            tintColor = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) 
+                Color.Black.copy(alpha = 0.25f) 
+            else 
+                Color(0xFFB0B0B0).copy(alpha = 0.15f),
+            luminosityAlpha = 0.15f
         ) {
             LazyColumn(
                 modifier = Modifier
@@ -123,14 +127,18 @@ fun SearchResultItem(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     onClick: () -> Unit
 ) {
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val surfaceTint = if (isDark) Color.Black.copy(alpha = 0.12f) else Color(0xFFB0B0B0).copy(alpha = 0.08f)
+    
     FluentSurface(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp),
-        alpha = 0.1f,
-        effect = FluentEffect.MICA,
-        blurRadius = 0,
+        alpha = 0.15f,
+        effect = FluentEffect.ACRYLIC,
+        blurRadius = 40,
+        tintColor = surfaceTint,
         borderAlpha = 0.1f
     ) {
         Row(

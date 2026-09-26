@@ -11,6 +11,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -24,6 +25,8 @@ fun ActionButton(
     icon: Any? = null,
     contentColor: Color = MaterialTheme.colorScheme.onSurface
 ) {
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    
     FluentSurface(
         modifier = modifier
             .fillMaxWidth()
@@ -32,7 +35,7 @@ fun ActionButton(
         alpha = 0.12f,
         effect = FluentEffect.ACRYLIC,
         blurRadius = 40,
-        tintColor = Color.White.copy(alpha = 0.05f),
+        tintColor = if (isDark) Color.White.copy(alpha = 0.05f) else Color(0xFFD0D0D0).copy(alpha = 0.15f),
         luminosityAlpha = 0.08f
     ) {
         Row(

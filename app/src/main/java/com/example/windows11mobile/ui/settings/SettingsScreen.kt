@@ -43,6 +43,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -88,6 +89,9 @@ fun SettingsScreen(
     val accentColorInt by viewModel.accentColor.collectAsStateWithLifecycle()
     val pinnedApps by viewModel.pinnedApps.collectAsStateWithLifecycle()
     val useSystemWallpaper by viewModel.useSystemWallpaper.collectAsStateWithLifecycle()
+    val accentColorOverlayEnabled by viewModel.accentColorOverlayEnabled.collectAsStateWithLifecycle()
+    val solidTilesEnabled by viewModel.solidTilesEnabled.collectAsStateWithLifecycle()
+    val squareTilesEnabled by viewModel.squareTilesEnabled.collectAsStateWithLifecycle()
     
     val categories = listOf("Personalization", "Launcher", "System", "Widgets", "About")
     val pagerState = rememberPagerState(initialPage = 0) { categories.size }
@@ -131,21 +135,12 @@ fun SettingsScreen(
             }
         }
 
-        // Dynamic Wallpaper Background
+        // Dynamic Wallpaper Background - Now Clear
         if (wallpaperSource != null) {
             AsyncImage(
                 model = wallpaperSource,
                 contentDescription = null,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                            renderEffect = RenderEffect.createBlurEffect(
-                                80f, 80f, Shader.TileMode.DECAL
-                            ).asComposeRenderEffect()
-                        }
-                    }
-                    .then(if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) Modifier.blur(40.dp) else Modifier),
+                modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop
             )
         } else {
@@ -164,7 +159,10 @@ fun SettingsScreen(
                     alpha = 0.4f,
                     effect = FluentEffect.ACRYLIC,
                     blurRadius = tileBlurRadius.toInt(),
-                    tintColor = Color.Black.copy(alpha = 0.3f),
+                    tintColor = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) 
+                        Color.Black.copy(alpha = 0.25f) 
+                    else 
+                        Color(0xFFB0B0B0).copy(alpha = 0.15f),
                     luminosityAlpha = 0.2f,
                     borderAlpha = 0.1f
                 ) {
@@ -328,6 +326,39 @@ fun SettingsScreen(
                             }
                             item {
                                 SettingsToggleItem(
+                                    title = "Accent Color Overlay",
+                                    subtitle = "Tint tiles with Windows Phone accent color",
+                                    icon = Icons.Rounded.Palette,
+                                    checked = accentColorOverlayEnabled,
+                                    tileOpacity = tileOpacity,
+                                    blurRadius = tileBlurRadius.toInt(),
+                                    onCheckedChange = { viewModel.setAccentColorOverlayEnabled(it) }
+                                )
+                            }
+                            item {
+                                SettingsToggleItem(
+                                    title = "Solid Tiles",
+                                    subtitle = "Use 100% opaque solid tile backgrounds",
+                                    icon = Icons.Rounded.Square,
+                                    checked = solidTilesEnabled,
+                                    tileOpacity = tileOpacity,
+                                    blurRadius = tileBlurRadius.toInt(),
+                                    onCheckedChange = { viewModel.setSolidTilesEnabled(it) }
+                                )
+                            }
+                            item {
+                                SettingsToggleItem(
+                                    title = "Square Tiles",
+                                    subtitle = "Use sharp square corners instead of rounded corners",
+                                    icon = Icons.Rounded.CropSquare,
+                                    checked = squareTilesEnabled,
+                                    tileOpacity = tileOpacity,
+                                    blurRadius = tileBlurRadius.toInt(),
+                                    onCheckedChange = { viewModel.setSquareTilesEnabled(it) }
+                                )
+                            }
+                            item {
+                                SettingsToggleItem(
                                     title = "Tile Picture",
                                     subtitle = "Show wallpaper through tiles with parallax",
                                     icon = Icons.Rounded.BurstMode,
@@ -458,15 +489,22 @@ fun SettingsScreen(
                                     alpha = tileOpacity,
                                     effect = FluentEffect.ACRYLIC,
                                     blurRadius = tileBlurRadius.toInt(),
-                                    tintColor = Color.Black.copy(alpha = 0.2f * tileOpacity),
+                                    tintColor = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) 
+                                        Color.Black.copy(alpha = 0.3f * tileOpacity) 
+                                    else 
+                                        Color(0xFFB0B0B0).copy(alpha = 0.25f * tileOpacity),
                                     shape = RoundedCornerShape(20.dp),
                                     luminosityAlpha = 0.1f * tileOpacity
                                 ) {
                                     Column(modifier = Modifier.padding(24.dp)) {
-                                        Text("Version 1.0.0-PRO", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                        val versionName = remember(context) {
+                                            try { context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.3.6" }
+                                            catch (_: Exception) { "1.3.6" }
+                                        }
+                                        Text("Version $versionName", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                                         Text("A high-fidelity Windows 11 launcher built with Jetpack Compose.", style = MaterialTheme.typography.bodyMedium)
                                         Spacer(modifier = Modifier.height(16.dp))
-                                        Text("Developed by AI", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                                        Text("Developed by armyvet66629", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                                     }
                                 }
                             }
@@ -559,7 +597,10 @@ fun AccentColorSection(current: Int, opacity: Float, blurRadius: Int, onSelect: 
         alpha = opacity,
         effect = FluentEffect.ACRYLIC,
         blurRadius = blurRadius,
-        tintColor = Color.Black.copy(alpha = 0.15f),
+        tintColor = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) 
+            Color.Black.copy(alpha = 0.12f) 
+        else 
+            Color(0xFFB0B0B0).copy(alpha = 0.08f),
         shape = RoundedCornerShape(16.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -599,7 +640,17 @@ fun AccentColorSection(current: Int, opacity: Float, blurRadius: Int, onSelect: 
 
 @Composable
 fun StatusBarStyleSection(current: String, opacity: Float, blurRadius: Int, onSelect: (String) -> Unit) {
-    FluentSurface(modifier = Modifier.fillMaxWidth(), alpha = opacity, effect = FluentEffect.ACRYLIC, blurRadius = blurRadius, tintColor = Color.Black.copy(alpha = 0.15f), shape = RoundedCornerShape(16.dp)) {
+    FluentSurface(
+        modifier = Modifier.fillMaxWidth(), 
+        alpha = opacity, 
+        effect = FluentEffect.ACRYLIC, 
+        blurRadius = blurRadius, 
+        tintColor = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) 
+            Color.Black.copy(alpha = 0.12f) 
+        else 
+            Color(0xFFB0B0B0).copy(alpha = 0.08f), 
+        shape = RoundedCornerShape(16.dp)
+    ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Rounded.ViewStream, contentDescription = null, modifier = Modifier.size(24.dp)); Spacer(modifier = Modifier.width(16.dp)); Text("Status Bar Icons", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
             Spacer(modifier = Modifier.height(16.dp))
@@ -610,7 +661,17 @@ fun StatusBarStyleSection(current: String, opacity: Float, blurRadius: Int, onSe
 
 @Composable
 fun BlurIntensitySection(current: Float, opacity: Float, onChange: (Float) -> Unit) {
-    FluentSurface(modifier = Modifier.fillMaxWidth(), alpha = opacity, effect = FluentEffect.ACRYLIC, blurRadius = current.toInt(), tintColor = Color.Black.copy(alpha = 0.15f), shape = RoundedCornerShape(16.dp)) {
+    FluentSurface(
+        modifier = Modifier.fillMaxWidth(), 
+        alpha = opacity, 
+        effect = FluentEffect.ACRYLIC, 
+        blurRadius = current.toInt(), 
+        tintColor = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) 
+            Color.Black.copy(alpha = 0.12f) 
+        else 
+            Color(0xFFB0B0B0).copy(alpha = 0.08f), 
+        shape = RoundedCornerShape(16.dp)
+    ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Rounded.BlurOn, contentDescription = null, modifier = Modifier.size(24.dp)); Spacer(modifier = Modifier.width(16.dp)); Text("Glass Blur", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold); Spacer(modifier = Modifier.weight(1f)); Text("${current.toInt()}px", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black) }
             Slider(value = current, onValueChange = onChange, valueRange = 0f..250f, modifier = Modifier.padding(top = 8.dp))
@@ -627,7 +688,10 @@ fun TileOpacitySection(current: Float, onChange: (Float) -> Unit) {
         alpha = (current * 0.8f).coerceAtLeast(0.15f), // Scale container alpha with setting but keep readable
         effect = FluentEffect.ACRYLIC,
         blurRadius = 80,
-        tintColor = Color.Black.copy(alpha = 0.1f * current),
+        tintColor = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) 
+            Color.Black.copy(alpha = 0.08f * current) 
+        else 
+            Color(0xFFB0B0B0).copy(alpha = 0.05f * current),
         shape = RoundedCornerShape(16.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -656,7 +720,10 @@ fun SettingsToggleItem(title: String, subtitle: String, icon: ImageVector, check
         alpha = tileOpacity,
         effect = FluentEffect.ACRYLIC,
         blurRadius = blurRadius,
-        tintColor = Color.Black.copy(alpha = 0.2f * tileOpacity), // Scale tint with opacity
+        tintColor = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) 
+            Color.Black.copy(alpha = 0.2f * tileOpacity) 
+        else 
+            Color(0xFFD0D0D0).copy(alpha = 0.15f * tileOpacity), // Greyish for light mode
         shape = RoundedCornerShape(20.dp),
         luminosityAlpha = 0.1f * tileOpacity // Scale luminosity with opacity
     ) {
@@ -691,7 +758,10 @@ fun SettingsClickableItem(title: String, subtitle: String, icon: ImageVector, on
         alpha = tileOpacity,
         effect = FluentEffect.ACRYLIC,
         blurRadius = blurRadius,
-        tintColor = Color.Black.copy(alpha = 0.2f * tileOpacity), // Scale tint with opacity
+        tintColor = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) 
+            Color.Black.copy(alpha = 0.2f * tileOpacity) 
+        else 
+            Color(0xFFD0D0D0).copy(alpha = 0.15f * tileOpacity), // Greyish for light mode
         shape = RoundedCornerShape(20.dp),
         luminosityAlpha = 0.1f * tileOpacity // Scale luminosity with opacity
     ) {

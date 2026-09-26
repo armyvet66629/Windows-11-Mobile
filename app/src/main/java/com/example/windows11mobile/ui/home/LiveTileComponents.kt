@@ -1,9 +1,13 @@
 package com.example.windows11mobile.ui.home
 
 import android.content.Intent
+import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.provider.AlarmClock
 import android.provider.Settings
+import com.example.windows11mobile.data.CalendarEvent
+import com.example.windows11mobile.data.PhoneTileData
+import com.example.windows11mobile.data.PhoneCallItem
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Image
@@ -544,18 +548,227 @@ private fun PhotoItem(photo: Any, size: TileSize, tileOpacity: Float = 1f) {
 }
 
 @Composable
-fun PhoneLiveTile(tile: HomeTile, recentNotifications: List<com.example.windows11mobile.data.NotificationData> = emptyList()) {
-    val items = recentNotifications.map { Triple(it.sender ?: "Unknown", it.content ?: "", null) }
-    
-    if (items.isNotEmpty()) {
-        LiveTileList(
-            tile = tile,
-            items = items,
-            icon = Icons.Rounded.Phone,
-            headerColor = Color(0xFF2ECC71)
-        )
-    } else {
-        StandardTileContent(tile, null)
+fun PhoneLiveTile(
+    tile: HomeTile,
+    phoneData: PhoneTileData = PhoneTileData(),
+    recentNotifications: List<NotificationData> = emptyList(),
+    defaultIconDrawable: Drawable? = null,
+    tileOpacity: Float = 0.25f
+) {
+    val totalCounters = phoneData.missedCallsCount + phoneData.voicemailCount
+    val isLive = totalCounters > 0 || phoneData.recentCalls.isNotEmpty() || recentNotifications.isNotEmpty()
+
+    FlippingTileContainer(
+        isLive = isLive,
+        front = {
+            PhoneTileFront(
+                tile = tile,
+                phoneData = phoneData,
+                defaultIconDrawable = defaultIconDrawable
+            )
+        },
+        back = {
+            PhoneTileBack(
+                tile = tile,
+                phoneData = phoneData,
+                recentNotifications = recentNotifications,
+                tileOpacity = tileOpacity
+            )
+        }
+    )
+}
+
+@Composable
+fun PhoneTileFront(
+    tile: HomeTile,
+    phoneData: PhoneTileData,
+    defaultIconDrawable: Drawable? = null
+) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize().padding(10.dp)) {
+        val isSmall = maxWidth < 150.dp
+        
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                if (defaultIconDrawable != null) {
+                    AsyncImage(
+                        model = defaultIconDrawable,
+                        contentDescription = "Phone",
+                        modifier = Modifier.size(if (isSmall) 32.dp else 52.dp)
+                    )
+                } else {
+                    FluentIcon(
+                        imageVector = Icons.Rounded.Phone,
+                        contentDescription = "Phone",
+                        size = if (isSmall) 32.dp else 52.dp,
+                        gradient = Brush.linearGradient(colors = listOf(Color(0xFF2ECC71), Color(0xFF27AE60)))
+                    )
+                }
+            }
+            
+            if (tile.size != TileSize.SMALL) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = tile.label.ifBlank { "Phone" },
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
+
+        val totalCount = phoneData.missedCallsCount + phoneData.voicemailCount
+        if (totalCount > 0) {
+            Row(
+                modifier = Modifier.align(Alignment.TopEnd),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (phoneData.voicemailCount > 0) {
+                    Box(
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .background(Color(0xFFE67E22))
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Rounded.Voicemail, contentDescription = "Voicemail", tint = Color.White, modifier = Modifier.size(12.dp))
+                            Spacer(modifier = Modifier.width(2.dp))
+                            Text("${phoneData.voicemailCount}", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+                    }
+                }
+                if (phoneData.missedCallsCount > 0) {
+                    Box(
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .background(Color(0xFFE74C3C))
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("${phoneData.missedCallsCount}", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color.White)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun PhoneTileBack(
+    tile: HomeTile,
+    phoneData: PhoneTileData,
+    recentNotifications: List<NotificationData> = emptyList(),
+    tileOpacity: Float = 0.25f
+) {
+    var currentIndex by remember { mutableIntStateOf(0) }
+    val calls = phoneData.recentCalls
+
+    LaunchedEffect(calls) {
+        if (calls.size > 1) {
+            while (true) {
+                delay(4000)
+                currentIndex = (currentIndex + 1) % calls.size
+            }
+        }
+    }
+
+    BoxWithConstraints(modifier = Modifier.fillMaxSize().padding(10.dp)) {
+        val isSmall = maxWidth < 150.dp
+        
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Rounded.Phone,
+                    contentDescription = null,
+                    tint = Color(0xFF2ECC71),
+                    modifier = Modifier.size(if (isSmall) 16.dp else 20.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "Phone",
+                    style = if (isSmall) MaterialTheme.typography.labelMedium else MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                
+                Spacer(modifier = Modifier.weight(1f))
+                
+                if (phoneData.voicemailCount > 0) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.Voicemail, contentDescription = "Voicemail", tint = Color(0xFFE67E22), modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Text("${phoneData.voicemailCount}", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color(0xFFE67E22))
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            if (calls.isNotEmpty()) {
+                val item = calls.getOrNull(currentIndex) ?: calls.first()
+                
+                AnimatedContent(
+                    targetState = item,
+                    transitionSpec = {
+                        slideInVertically { it } + fadeIn() togetherWith slideOutVertically { -it } + fadeOut()
+                    },
+                    label = "phoneCallRotate"
+                ) { call ->
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = call.name,
+                                style = if (isSmall) MaterialTheme.typography.labelMedium else MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = if (call.isMissed) Color(0xFFE74C3C) else MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (call.timeFormatted.isNotBlank()) {
+                                Text(
+                                    text = call.timeFormatted,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                )
+                            }
+                        }
+                        
+                        Text(
+                            text = call.summary,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (call.isMissed) Color(0xFFE74C3C) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                        )
+                    }
+                }
+            } else if (recentNotifications.isNotEmpty()) {
+                val firstNotif = recentNotifications.first()
+                Column {
+                    Text(
+                        text = firstNotif.sender ?: "Call",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = firstNotif.content ?: "Missed call",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    )
+                }
+            } else {
+                Text(
+                    text = "No recent calls",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+            }
+        }
     }
 }
 
@@ -1372,9 +1585,74 @@ fun DateBackSide() {
 }
 
 @Composable
+fun CalendarTileBack(events: List<CalendarEvent>) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize().padding(12.dp)) {
+        val isSmall = maxWidth < 150.dp
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                FluentIcon(
+                    FluentIcons.Calendar, 
+                    contentDescription = null, 
+                    size = if (isSmall) 16.dp else 20.dp,
+                    gradient = Brush.linearGradient(colors = listOf(Color(0xFFE74C3C), Color(0xFFC0392B)))
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Calendar",
+                    style = if (isSmall) MaterialTheme.typography.labelMedium else MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Black,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            if (events.isEmpty()) {
+                Text(
+                    "No upcoming events",
+                    style = if (isSmall) MaterialTheme.typography.labelSmall else MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    events.take(if (isSmall) 1 else 3).forEach { event ->
+                        val timeStr = SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(event.startTime))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(3.dp, if (isSmall) 20.dp else 24.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(event.color))
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = event.title,
+                                    style = if (isSmall) MaterialTheme.typography.labelSmall else MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = timeStr,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun FolderTileContent(
     tile: HomeTile,
-    allNotifications: Map<String, AppNotificationData> = emptyMap()
+    allNotifications: Map<String, AppNotificationData> = emptyMap(),
+    tilePictureEnabled: Boolean = false
 ) {
     // Collect all notifications for apps inside this folder
     val folderNotifications = remember(tile.subTiles, allNotifications) {
@@ -1386,63 +1664,104 @@ fun FolderTileContent(
     if (folderNotifications.isNotEmpty() && tile.size != TileSize.SMALL) {
         FlippingTileContainer(
             isLive = true,
-            front = { FolderStaticGrid(tile) },
+            front = { FolderStaticGrid(tile, tilePictureEnabled) },
             back = { GenericNotificationLiveTile(tile, folderNotifications) }
         )
     } else {
-        FolderStaticGrid(tile)
+        FolderStaticGrid(tile, tilePictureEnabled)
     }
 }
 
 @Composable
-fun FolderStaticGrid(tile: HomeTile) {
+fun FolderStaticGrid(tile: HomeTile, tilePictureEnabled: Boolean = false) {
+    val context = LocalContext.current
+    val subApps = remember(tile.subTiles) { tile.subTiles.take(4) }
+    val iconSize = if (tile.size == TileSize.SMALL) 12.dp else 24.dp
+    val spacing = if (tile.size == TileSize.SMALL) 4.dp else 8.dp
+
     Column(
         modifier = Modifier.fillMaxSize().padding(12.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Box(
+        Column(
             modifier = Modifier.weight(1f).fillMaxWidth(),
-            contentAlignment = Alignment.Center
+            verticalArrangement = Arrangement.spacedBy(spacing, Alignment.CenterVertically),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            val columns = 2
-            val iconSize = if (tile.size == TileSize.SMALL) 12.dp else 24.dp
-            val spacing = if (tile.size == TileSize.SMALL) 4.dp else 8.dp
-            
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(columns),
-                modifier = Modifier.fillMaxSize(),
-                userScrollEnabled = false,
-                horizontalArrangement = Arrangement.spacedBy(spacing),
-                verticalArrangement = Arrangement.spacedBy(spacing)
+            Row(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(spacing, Alignment.CenterHorizontally)
             ) {
-                items(tile.subTiles.take(4)) { subTile ->
-                    val context = LocalContext.current
-                    val icon = remember(subTile.packageName) {
-                        subTile.packageName?.let { pkg ->
-                            try { context.packageManager.getApplicationIcon(pkg) } catch (_: Exception) { null }
-                        }
-                    }
+                listOf(0, 1).forEach { index ->
+                    val subTile = subApps.getOrNull(index)
                     Box(
                         modifier = Modifier
-                            .fillMaxSize()
+                            .weight(1f)
+                            .fillMaxHeight()
                             .aspectRatio(1f)
                             .clip(RoundedCornerShape(6.dp))
-                            .background(Color.White.copy(alpha = 0.08f)),
+                            .background(if (tilePictureEnabled) Color.Transparent else Color.White.copy(alpha = 0.08f)),
                         contentAlignment = Alignment.Center
                     ) {
-                        if (icon != null) {
-                            AsyncImage(
-                                model = icon,
-                                contentDescription = null,
-                                modifier = Modifier.size(iconSize)
-                            )
-                        } else {
-                            Icon(
-                                imageVector = Icons.Rounded.Apps,
-                                contentDescription = null,
-                                modifier = Modifier.size(iconSize * 0.8f),
-                                tint = Color.White.copy(alpha = 0.5f)
-                            )
+                        if (subTile != null) {
+                            val icon = remember(subTile.packageName) {
+                                subTile.packageName?.let { pkg ->
+                                    try { context.packageManager.getApplicationIcon(pkg) } catch (_: Exception) { null }
+                                }
+                            }
+                            if (icon != null) {
+                                AsyncImage(
+                                    model = icon,
+                                    contentDescription = subTile.label,
+                                    modifier = Modifier.size(iconSize)
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Rounded.Apps,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(iconSize * 0.8f),
+                                    tint = Color.White.copy(alpha = 0.5f)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            Row(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(spacing, Alignment.CenterHorizontally)
+            ) {
+                listOf(2, 3).forEach { index ->
+                    val subTile = subApps.getOrNull(index)
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .aspectRatio(1f)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(if (tilePictureEnabled) Color.Transparent else Color.White.copy(alpha = 0.08f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (subTile != null) {
+                            val icon = remember(subTile.packageName) {
+                                subTile.packageName?.let { pkg ->
+                                    try { context.packageManager.getApplicationIcon(pkg) } catch (_: Exception) { null }
+                                }
+                            }
+                            if (icon != null) {
+                                AsyncImage(
+                                    model = icon,
+                                    contentDescription = subTile.label,
+                                    modifier = Modifier.size(iconSize)
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Rounded.Apps,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(iconSize * 0.8f),
+                                    tint = Color.White.copy(alpha = 0.5f)
+                                )
+                            }
                         }
                     }
                 }
@@ -1453,12 +1772,11 @@ fun FolderStaticGrid(tile: HomeTile) {
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = tile.label,
-                style = MaterialTheme.typography.labelLarge,
+                style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
-                color = MaterialTheme.colorScheme.onSurface
+                overflow = TextOverflow.Ellipsis
             )
         }
     }
@@ -1476,14 +1794,15 @@ fun StandardTileContent(tile: HomeTile, icon: android.graphics.drawable.Drawable
             horizontalAlignment = if (tile.size == TileSize.WIDE || tile.size == TileSize.LARGE) Alignment.Start else Alignment.CenterHorizontally,
             verticalArrangement = if (tile.size == TileSize.WIDE || tile.size == TileSize.LARGE) Arrangement.Top else Arrangement.Center
         ) {
-            Box(
+            Row(
                 modifier = if (tile.size == TileSize.WIDE || tile.size == TileSize.LARGE) Modifier.size(if (isSmallWidth) 30.dp else 36.dp) 
                            else Modifier.weight(1f).fillMaxWidth(),
-                contentAlignment = Alignment.Center
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
             ) {
                 val iconSize = when (tile.size) {
                     TileSize.SMALL -> if (isTinyWidth) 32.dp else 40.dp
-                    TileSize.MEDIUM -> if (isSmallWidth) 56.dp else 72.dp
+                    TileSize.MEDIUM -> if (tile.notificationCount > 0) (if (isSmallWidth) 42.dp else 52.dp) else (if (isSmallWidth) 56.dp else 72.dp)
                     TileSize.WIDE -> if (isSmallWidth) 40.dp else 48.dp
                     TileSize.LARGE -> if (isSmallWidth) 64.dp else 84.dp
                 }
@@ -1512,6 +1831,18 @@ fun StandardTileContent(tile: HomeTile, icon: android.graphics.drawable.Drawable
                         size = iconSize,
                         gradient = Brush.linearGradient(
                             colors = listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary)
+                        )
+                    )
+                }
+
+                if (tile.notificationCount > 0 && tile.size == TileSize.MEDIUM) {
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = if (tile.notificationCount > 99) "99+" else tile.notificationCount.toString(),
+                        style = MaterialTheme.typography.displayMedium.copy(
+                            fontSize = if (isSmallWidth) 28.sp else 38.sp,
+                            fontWeight = FontWeight.W300,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                     )
                 }

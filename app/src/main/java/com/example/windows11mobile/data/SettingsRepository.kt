@@ -33,6 +33,9 @@ interface SettingsRepository {
     val tileBlurRadius: Flow<Float>
     val homeScreenBlurEnabled: Flow<Boolean>
     val useSystemWallpaper: Flow<Boolean>
+    val accentColorOverlayEnabled: Flow<Boolean>
+    val solidTilesEnabled: Flow<Boolean>
+    val squareTilesEnabled: Flow<Boolean>
 
     suspend fun setDarkMode(isDarkMode: Boolean)
     suspend fun setWallpaperUri(uri: String?)
@@ -61,6 +64,9 @@ interface SettingsRepository {
     suspend fun setTileBlurRadius(radius: Float)
     suspend fun setHomeScreenBlurEnabled(enabled: Boolean)
     suspend fun setUseSystemWallpaper(enabled: Boolean)
+    suspend fun setAccentColorOverlayEnabled(enabled: Boolean)
+    suspend fun setSolidTilesEnabled(enabled: Boolean)
+    suspend fun setSquareTilesEnabled(enabled: Boolean)
 
     companion object {
         val IS_DARK_MODE = booleanPreferencesKey("is_dark_mode")
@@ -86,6 +92,9 @@ interface SettingsRepository {
         val TILE_BLUR_RADIUS = floatPreferencesKey("tile_blur_radius")
         val HOME_SCREEN_BLUR_ENABLED = booleanPreferencesKey("home_screen_blur_enabled")
         val USE_SYSTEM_WALLPAPER = booleanPreferencesKey("use_system_wallpaper")
+        val ACCENT_COLOR_OVERLAY_ENABLED = booleanPreferencesKey("accent_color_overlay_enabled")
+        val SOLID_TILES_ENABLED = booleanPreferencesKey("solid_tiles_enabled")
+        val SQUARE_TILES_ENABLED = booleanPreferencesKey("square_tiles_enabled")
         
         val DEFAULT_PINNED_APPS = setOf(
             "com.android.settings",
@@ -196,6 +205,18 @@ class RealSettingsRepository(private val context: Context) : SettingsRepository 
 
     override val useSystemWallpaper: Flow<Boolean> = dataStore.data.map { preferences ->
         preferences[SettingsRepository.USE_SYSTEM_WALLPAPER] ?: false
+    }
+
+    override val accentColorOverlayEnabled: Flow<Boolean> = dataStore.data.map { preferences ->
+        preferences[SettingsRepository.ACCENT_COLOR_OVERLAY_ENABLED] ?: false
+    }
+
+    override val solidTilesEnabled: Flow<Boolean> = dataStore.data.map { preferences ->
+        preferences[SettingsRepository.SOLID_TILES_ENABLED] ?: false
+    }
+
+    override val squareTilesEnabled: Flow<Boolean> = dataStore.data.map { preferences ->
+        preferences[SettingsRepository.SQUARE_TILES_ENABLED] ?: false
     }
 
     override suspend fun setDarkMode(isDarkMode: Boolean) {
@@ -376,6 +397,24 @@ class RealSettingsRepository(private val context: Context) : SettingsRepository 
     override suspend fun setUseSystemWallpaper(enabled: Boolean) {
         dataStore.edit { preferences ->
             preferences[SettingsRepository.USE_SYSTEM_WALLPAPER] = enabled
+        }
+    }
+
+    override suspend fun setAccentColorOverlayEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[SettingsRepository.ACCENT_COLOR_OVERLAY_ENABLED] = enabled
+        }
+    }
+
+    override suspend fun setSolidTilesEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[SettingsRepository.SOLID_TILES_ENABLED] = enabled
+        }
+    }
+
+    override suspend fun setSquareTilesEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[SettingsRepository.SQUARE_TILES_ENABLED] = enabled
         }
     }
 }

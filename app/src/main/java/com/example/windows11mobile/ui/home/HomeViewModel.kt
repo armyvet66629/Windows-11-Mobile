@@ -37,6 +37,7 @@ class HomeViewModel(
 
     private val contactsRepository = ContactsRepository.getInstance(context)
     val contacts = contactsRepository.contacts
+    val phoneTileData = contactsRepository.phoneTileData
 
     private val calendarRepository = CalendarRepository(context)
     val calendarEvents = calendarRepository.events
@@ -168,6 +169,12 @@ class HomeViewModel(
         null
     )
 
+    val useSystemWallpaper = settingsRepository.useSystemWallpaper.stateIn(
+        viewModelScope,
+        SharingStarted.Eagerly,
+        false
+    )
+
     val useFahrenheit = settingsRepository.useFahrenheit.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
@@ -202,6 +209,24 @@ class HomeViewModel(
         viewModelScope,
         SharingStarted.Eagerly,
         true
+    )
+
+    val accentColorOverlayEnabled = settingsRepository.accentColorOverlayEnabled.stateIn(
+        viewModelScope,
+        SharingStarted.Eagerly,
+        false
+    )
+
+    val solidTilesEnabled = settingsRepository.solidTilesEnabled.stateIn(
+        viewModelScope,
+        SharingStarted.Eagerly,
+        false
+    )
+
+    val squareTilesEnabled = settingsRepository.squareTilesEnabled.stateIn(
+        viewModelScope,
+        SharingStarted.Eagerly,
+        false
     )
 
     init {
@@ -435,6 +460,21 @@ class HomeViewModel(
     fun addWidgetTile(widgetId: Int, label: String) {
         val newTile = HomeTile(id = UUID.randomUUID().toString(), label = label, size = TileSize.WIDE, widgetId = widgetId, isWidget = true)
         _rawTiles.value = _rawTiles.value + newTile; saveTiles()
+    }
+
+    fun moveTileInsideFolder(folderId: String, fromIndex: Int, toIndex: Int) {
+        val list = _rawTiles.value.toMutableList()
+        val folderIndex = list.indexOfFirst { it.id == folderId }
+        if (folderIndex == -1) return
+        val folder = list[folderIndex]
+        val subTiles = folder.subTiles.toMutableList()
+        if (fromIndex in subTiles.indices && toIndex in subTiles.indices && fromIndex != toIndex) {
+            val item = subTiles.removeAt(fromIndex)
+            subTiles.add(toIndex, item)
+            list[folderIndex] = folder.copy(subTiles = subTiles)
+            _rawTiles.value = list
+            saveTiles()
+        }
     }
 
     fun removeTile(id: String) {

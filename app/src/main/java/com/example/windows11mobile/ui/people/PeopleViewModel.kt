@@ -8,8 +8,11 @@ import androidx.lifecycle.viewModelScope
 import com.example.windows11mobile.data.Contact
 import com.example.windows11mobile.data.ContactsRepository
 import com.example.windows11mobile.data.RecentActivity
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -17,8 +20,14 @@ class PeopleViewModel(
     application: Application
 ) : AndroidViewModel(application) {
     private val repository = ContactsRepository.getInstance(application.applicationContext)
-    val contacts: StateFlow<List<Contact>> = repository.contacts
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    val contacts: StateFlow<List<Contact>> = combine(repository.contacts, _searchQuery) { contacts, query ->
+        if (query.isBlank()) contacts
+        else contacts.filter { it.name.contains(query, ignoreCase = true) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val recentActivity: StateFlow<List<RecentActivity>> = repository.recentActivity
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -43,6 +52,10 @@ class PeopleViewModel(
             repository.updateContacts()
             repository.updateRecentActivity()
         }
+    }
+
+    fun onSearchQueryChange(query: String) {
+        _searchQuery.value = query
     }
 
     fun toggleStarred(contact: Contact) {

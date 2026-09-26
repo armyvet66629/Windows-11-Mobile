@@ -58,6 +58,7 @@ fun AppDrawerScreen(
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val apps by viewModel.filteredApps.collectAsStateWithLifecycle()
     val tileOpacity by viewModel.tileOpacity.collectAsStateWithLifecycle()
+    val tileBlurRadius by viewModel.tileBlurRadius.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -68,7 +69,9 @@ fun AppDrawerScreen(
     val grouped = remember(apps) { apps.groupBy { it.name.firstOrNull()?.uppercaseChar() ?: '?' } }
     val letters = remember(grouped) { grouped.keys.toList().sorted() }
     val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-    val surfaceTint = if (isDark) Color.Black.copy(alpha = 0.4f) else Color.White.copy(alpha = 0.2f)
+    val surfaceTint = if (isDark) Color.Black.copy(alpha = 0.3f * tileOpacity) else Color(0xFFB0B0B0).copy(alpha = 0.25f * tileOpacity)
+    val luminosityAlpha = if (isDark) 0.15f * tileOpacity else 0.25f * tileOpacity
+    val borderAlpha = 0.3f
 
     Column(
         modifier = modifier.fillMaxSize()
@@ -81,10 +84,10 @@ fun AppDrawerScreen(
             shape = RoundedCornerShape(24.dp),
             alpha = tileOpacity,
             effect = com.example.windows11mobile.ui.components.FluentEffect.ACRYLIC,
-            blurRadius = 120,
-            tintColor = Color.Black.copy(alpha = 0.4f),
-            luminosityAlpha = 0.2f,
-            borderAlpha = 0.15f
+            blurRadius = tileBlurRadius.toInt(),
+            tintColor = surfaceTint,
+            luminosityAlpha = luminosityAlpha,
+            borderAlpha = borderAlpha
         ) {
             OutlinedTextField(
                 value = searchQuery,
@@ -94,7 +97,8 @@ fun AppDrawerScreen(
                     Text(
                         "Search apps and web", 
                         style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                     ) 
                 },
                 leadingIcon = { 
@@ -113,7 +117,9 @@ fun AppDrawerScreen(
                     focusedContainerColor = Color.Transparent,
                     unfocusedContainerColor = Color.Transparent,
                     focusedBorderColor = Color.Transparent,
-                    unfocusedBorderColor = Color.Transparent
+                    unfocusedBorderColor = Color.Transparent,
+                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface
                 ),
                 singleLine = true
             )
@@ -131,6 +137,10 @@ fun AppDrawerScreen(
                 item {
                     LauncherSettingsItem(
                         tileOpacity = tileOpacity,
+                        tileBlurRadius = tileBlurRadius,
+                        surfaceTint = surfaceTint,
+                        luminosityAlpha = luminosityAlpha,
+                        borderAlpha = borderAlpha,
                         onClick = onSettingsClick
                     )
                 }
@@ -146,9 +156,10 @@ fun AppDrawerScreen(
                             shape = RoundedCornerShape(12.dp),
                             alpha = tileOpacity,
                             effect = com.example.windows11mobile.ui.components.FluentEffect.ACRYLIC,
-                            blurRadius = 120,
+                            blurRadius = tileBlurRadius.toInt(),
                             tintColor = surfaceTint,
-                            luminosityAlpha = 0.2f
+                            luminosityAlpha = luminosityAlpha,
+                            borderAlpha = borderAlpha
                         ) {
                             Text(
                                 text = letter.toString(),
@@ -168,9 +179,10 @@ fun AppDrawerScreen(
                             shape = RoundedCornerShape(20.dp),
                             alpha = tileOpacity,
                             effect = com.example.windows11mobile.ui.components.FluentEffect.ACRYLIC,
-                            blurRadius = 120,
+                            blurRadius = tileBlurRadius.toInt(),
                             tintColor = surfaceTint,
-                            luminosityAlpha = 0.2f
+                            luminosityAlpha = luminosityAlpha,
+                            borderAlpha = borderAlpha
                         ) {
                             Column(
                                 modifier = Modifier.padding(vertical = 8.dp),
@@ -362,6 +374,10 @@ fun AppDrawerScreen(
 @Composable
 fun LauncherSettingsItem(
     tileOpacity: Float = 0.3f,
+    tileBlurRadius: Float = 120f,
+    surfaceTint: Color = Color.Transparent,
+    luminosityAlpha: Float = 0.2f,
+    borderAlpha: Float = 0.15f,
     onClick: () -> Unit
 ) {
     FluentSurface(
@@ -371,9 +387,10 @@ fun LauncherSettingsItem(
         shape = RoundedCornerShape(20.dp),
         alpha = tileOpacity,
         effect = com.example.windows11mobile.ui.components.FluentEffect.ACRYLIC,
-        blurRadius = 120,
-        tintColor = Color.Black.copy(alpha = 0.4f),
-        luminosityAlpha = 0.2f
+        blurRadius = tileBlurRadius.toInt(),
+        tintColor = surfaceTint,
+        luminosityAlpha = luminosityAlpha,
+        borderAlpha = borderAlpha
     ) {
         Column(
             modifier = Modifier.padding(vertical = 8.dp),
@@ -400,7 +417,7 @@ fun LauncherSettingsItem(
                             imageVector = Icons.Rounded.Settings,
                             contentDescription = null,
                             modifier = Modifier.size(32.dp),
-                            tint = Color.Black
+                            tint = MaterialTheme.colorScheme.primary
                         )
                     }
                     
@@ -411,12 +428,12 @@ fun LauncherSettingsItem(
                             text = "Launcher Settings",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onBackground
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
                             text = "com.example.windows11mobile",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                             fontWeight = FontWeight.SemiBold
                         )
                     }
@@ -507,12 +524,12 @@ fun AppItem(
                     text = app.name,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
                     text = app.packageName,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                     fontWeight = FontWeight.SemiBold
                 )
             }

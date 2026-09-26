@@ -588,7 +588,7 @@ fun QuickActionButton(
         alpha = 0.15f,
         effect = FluentEffect.ACRYLIC,
         blurRadius = 60,
-        tintColor = Color.White.copy(alpha = 0.05f),
+        tintColor = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) Color.White.copy(alpha = 0.05f) else Color(0xFFD0D0D0).copy(alpha = 0.15f),
         luminosityAlpha = 0.1f
     ) {
         Box(
@@ -624,7 +624,11 @@ fun ResizeButton(
         alpha = if (isSelected) 0.3f else 0.1f,
         effect = FluentEffect.ACRYLIC,
         blurRadius = 40,
-        tintColor = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.05f)
+        tintColor = if (isSelected) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+        } else {
+            if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) Color.White.copy(alpha = 0.05f) else Color(0xFFD0D0D0).copy(alpha = 0.15f)
+        }
     ) {
         Box(
             modifier = Modifier.fillMaxSize(),
