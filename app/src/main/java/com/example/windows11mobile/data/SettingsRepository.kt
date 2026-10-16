@@ -36,6 +36,7 @@ interface SettingsRepository {
     val accentColorOverlayEnabled: Flow<Boolean>
     val solidTilesEnabled: Flow<Boolean>
     val squareTilesEnabled: Flow<Boolean>
+    val selectedIconPack: Flow<String>
 
     suspend fun setDarkMode(isDarkMode: Boolean)
     suspend fun setWallpaperUri(uri: String?)
@@ -67,6 +68,7 @@ interface SettingsRepository {
     suspend fun setAccentColorOverlayEnabled(enabled: Boolean)
     suspend fun setSolidTilesEnabled(enabled: Boolean)
     suspend fun setSquareTilesEnabled(enabled: Boolean)
+    suspend fun setSelectedIconPack(packageName: String)
 
     companion object {
         val IS_DARK_MODE = booleanPreferencesKey("is_dark_mode")
@@ -95,6 +97,7 @@ interface SettingsRepository {
         val ACCENT_COLOR_OVERLAY_ENABLED = booleanPreferencesKey("accent_color_overlay_enabled")
         val SOLID_TILES_ENABLED = booleanPreferencesKey("solid_tiles_enabled")
         val SQUARE_TILES_ENABLED = booleanPreferencesKey("square_tiles_enabled")
+        val SELECTED_ICON_PACK = stringPreferencesKey("selected_icon_pack")
         
         val DEFAULT_PINNED_APPS = setOf(
             "com.android.settings",
@@ -108,7 +111,7 @@ interface SettingsRepository {
             "https://blackhawkup.com/posts/feed/"
         )
         val DEFAULT_ACCENT_COLOR = 0xFF0078D4.toInt()
-        val DEFAULT_PAGE_ORDER = listOf("notes", "board", "desktop", "apps", "people")
+        val DEFAULT_PAGE_ORDER = listOf("route_buddy", "notes", "board", "desktop", "apps", "people")
     }
 }
 
@@ -217,6 +220,10 @@ class RealSettingsRepository(private val context: Context) : SettingsRepository 
 
     override val squareTilesEnabled: Flow<Boolean> = dataStore.data.map { preferences ->
         preferences[SettingsRepository.SQUARE_TILES_ENABLED] ?: false
+    }
+
+    override val selectedIconPack: Flow<String> = dataStore.data.map { preferences ->
+        preferences[SettingsRepository.SELECTED_ICON_PACK] ?: "default"
     }
 
     override suspend fun setDarkMode(isDarkMode: Boolean) {
@@ -415,6 +422,12 @@ class RealSettingsRepository(private val context: Context) : SettingsRepository 
     override suspend fun setSquareTilesEnabled(enabled: Boolean) {
         dataStore.edit { preferences ->
             preferences[SettingsRepository.SQUARE_TILES_ENABLED] = enabled
+        }
+    }
+
+    override suspend fun setSelectedIconPack(packageName: String) {
+        dataStore.edit { preferences ->
+            preferences[SettingsRepository.SELECTED_ICON_PACK] = packageName
         }
     }
 }

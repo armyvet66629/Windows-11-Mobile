@@ -130,6 +130,7 @@ fun HomeScreen(
     val contacts by viewModel.contacts.collectAsStateWithLifecycle()
     val availableWidgets by viewModel.availableWidgets.collectAsStateWithLifecycle()
     val topNews by viewModel.topNews.collectAsStateWithLifecycle()
+    val googleNews by viewModel.googleNews.collectAsStateWithLifecycle()
     val recentPhotos by viewModel.recentPhotos.collectAsStateWithLifecycle()
     val openFolderId by viewModel.openFolderId.collectAsStateWithLifecycle()
     val tilePictureEnabled by viewModel.tilePictureEnabled.collectAsStateWithLifecycle()
@@ -140,6 +141,7 @@ fun HomeScreen(
     val accentColorOverlayEnabled by viewModel.accentColorOverlayEnabled.collectAsStateWithLifecycle()
     val solidTilesEnabled by viewModel.solidTilesEnabled.collectAsStateWithLifecycle()
     val squareTilesEnabled by viewModel.squareTilesEnabled.collectAsStateWithLifecycle()
+    val selectedIconPack by viewModel.selectedIconPack.collectAsStateWithLifecycle()
     val phoneData by viewModel.phoneTileData.collectAsStateWithLifecycle()
     val isEditModeState = rememberUpdatedState(isEditMode)
     val swipeDownEnabled by viewModel.swipeDownForNotifications.collectAsStateWithLifecycle()
@@ -275,11 +277,16 @@ fun HomeScreen(
     val tilePositions = remember { mutableStateMapOf<String, Offset>() }
     val tileSizes = remember { mutableStateMapOf<String, IntSize>() }
 
+    var hoverStartTime by remember { mutableLongStateOf(0L) }
     var lastSwappedTileId by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(draggingTileId) {
         viewModel.setIsDragging(draggingTileId != null)
-        if (draggingTileId == null) lastSwappedTileId = null
+        if (draggingTileId == null) {
+            hoveredTileId = null
+            hoverStartTime = 0L
+            lastSwappedTileId = null
+        }
     }
 
     LaunchedEffect(draggingTileId, pointerPosition) {
@@ -288,32 +295,51 @@ fun HomeScreen(
             return@LaunchedEffect
         }
         
-        val targetTile = tiles.filter { it.id != draggingId }.find { other ->
+        val draggedTopLeft = pointerPosition - dragStartPointerOffset
+        val draggedCenter = draggedTopLeft + Offset(draggingTileSize.width / 2f, draggingTileSize.height / 2f)
+
+        val hoverTarget = tiles.filter { it.id != draggingId }.find { other ->
             val otherPos = tilePositions[other.id] ?: return@find false
             val otherSize = tileSizes[other.id] ?: return@find false
-            val otherCenter = otherPos + Offset(otherSize.width / 2f, otherSize.height / 2f)
-            val distSq = (pointerPosition.x - otherCenter.x) * (pointerPosition.x - otherCenter.x) +
-                         (pointerPosition.y - otherCenter.y) * (pointerPosition.y - otherCenter.y)
-            val swapRadius = otherSize.width * 0.45f
-            distSq < swapRadius * swapRadius
+            val otherRect = Rect(otherPos.x, otherPos.y, otherPos.x + otherSize.width, otherPos.y + otherSize.height)
+            otherRect.contains(draggedCenter)
         }
 
-        val isFolderCandidate = targetTile != null && !targetTile.isWidget && !targetTile.isSpacer
-        
-        if (targetTile != null && isFolderCandidate) {
-            hoveredTileId = targetTile.id
+        if (hoverTarget != null && !hoverTarget.isWidget && !hoverTarget.isSpacer) {
+            if (hoveredTileId == hoverTarget.id) {
+                if (hoverStartTime == 0L) hoverStartTime = System.currentTimeMillis()
+            } else {
+                hoveredTileId = hoverTarget.id
+                hoverStartTime = System.currentTimeMillis()
+            }
         } else {
             hoveredTileId = null
-            if (targetTile != null && targetTile.id != lastSwappedTileId) {
-                val fromIndex = tiles.indexOfFirst { it.id == draggingId }
-                val toIndex = tiles.indexOfFirst { it.id == targetTile.id }
-                if (fromIndex != -1 && toIndex != -1 && fromIndex != toIndex) {
-                    lastSwappedTileId = targetTile.id
-                    viewModel.moveTile(fromIndex, toIndex)
-                }
-            } else if (targetTile == null) {
-                lastSwappedTileId = null
+            hoverStartTime = 0L
+        }
+
+        val reorderTarget = tiles.filter { it.id != draggingId }.find { other ->
+            val otherPos = tilePositions[other.id] ?: return@find false
+            val otherSize = tileSizes[other.id] ?: return@find false
+            val innerWidth = otherSize.width * 0.5f
+            val innerHeight = otherSize.height * 0.5f
+            val innerRect = Rect(
+                otherPos.x + (otherSize.width - innerWidth) / 2f,
+                otherPos.y + (otherSize.height - innerHeight) / 2f,
+                otherPos.x + (otherSize.width + innerWidth) / 2f,
+                otherPos.y + (otherSize.height + innerHeight) / 2f
+            )
+            innerRect.contains(draggedCenter)
+        }
+
+        if (reorderTarget != null && reorderTarget.id != lastSwappedTileId) {
+            val fromIndex = tiles.indexOfFirst { it.id == draggingId }
+            val toIndex = tiles.indexOfFirst { it.id == reorderTarget.id }
+            if (fromIndex != -1 && toIndex != -1 && fromIndex != toIndex) {
+                lastSwappedTileId = reorderTarget.id
+                viewModel.reorderTile(fromIndex, toIndex)
             }
+        } else if (reorderTarget == null) {
+            lastSwappedTileId = null
         }
     }
 
@@ -387,8 +413,8 @@ fun HomeScreen(
 
     Box(
         modifier = modifier.fillMaxSize().background(Color.Transparent)
-            .pointerInput(swipeDownEnabled, isAnyOverlayOpen) {
-                if (!swipeDownEnabled || isAnyOverlayOpen) return@pointerInput
+            .pointerInput(swipeDownEnabled, isAnyOverlayOpen, isEditMode, draggingTileId) {
+                if (!swipeDownEnabled || isAnyOverlayOpen || isEditMode || draggingTileId != null) return@pointerInput
                 awaitEachGesture {
                     val firstDown = awaitFirstDown(pass = PointerEventPass.Initial)
                     var totalDrag = Offset.Zero
@@ -413,14 +439,13 @@ fun HomeScreen(
                             if (event.changes.all { !it.pressed }) {
                                 val targetId = hoveredTileId
                                 val draggingId = draggingTileId
-                                if (draggingId != null) {
-                                    val fromIndex = tiles.indexOfFirst { it.id == draggingId }
-                                    if (targetId != null) {
-                                        val toIndex = tiles.indexOfFirst { it.id == targetId }
-                                        if (fromIndex != -1 && toIndex != -1) viewModel.moveTile(fromIndex, toIndex)
-                                    } else if (fromIndex != -1) viewModel.moveTile(fromIndex, fromIndex)
+                                val isHoverTimeMet = hoverStartTime > 0 && (System.currentTimeMillis() - hoverStartTime >= 350)
+                                if (draggingId != null && targetId != null && isHoverTimeMet && draggingId != targetId) {
+                                    viewModel.combineTilesIntoFolder(draggingId, targetId)
+                                } else if (draggingId != null) {
+                                    viewModel.saveTiles()
                                 }
-                                draggingTileId = null; hoveredTileId = null; viewModel.setIsDragging(false)
+                                draggingTileId = null; hoveredTileId = null; hoverStartTime = 0L; viewModel.setIsDragging(false)
                             }
                         }
                     }
@@ -474,7 +499,7 @@ fun HomeScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(scrollState)
+                .verticalScroll(scrollState, enabled = !isEditMode && draggingTileId == null)
                 .onGloballyPositioned { coords -> gridPosition = coords.positionInWindow() }
                 .padding(
                     start = 4.dp, 
@@ -573,18 +598,18 @@ fun HomeScreen(
                             Box {
                                 HomeTileItem(
                                     tile = tile, isEditMode = isEditMode, isHovered = isHoverTarget, tileOpacity = tileOpacity, weatherData = weatherData, 
-                                    recentNotifications = tile.packageName?.let { allNotifications[it]?.recentNotifications } ?: emptyList(),
+                                    recentNotifications = getRecentNotificationsForTile(tile, allNotifications),
                                     allNotifications = allNotifications,
                                     currentMedia = currentMedia, calendarEvents = calendarEvents, contacts = contacts, weatherAppPackage = weatherAppPackage, 
                                     recentPhotos = recentPhotos, tilePictureEnabled = tilePictureEnabled, 
                                     tileBlurRadius = tileBlurRadius, homeScreenBlurEnabled = homeScreenBlurEnabled, 
                                     accentColorOverlayEnabled = accentColorOverlayEnabled, solidTilesEnabled = solidTilesEnabled, squareTilesEnabled = squareTilesEnabled,
-                                    phoneData = phoneData,
+                                    selectedIconPack = selectedIconPack, phoneData = phoneData,
                                     wallpaperPainter = wallpaperPainter, wallpaperBitmap = wallpaperBitmap, 
                                     parallaxX = layoutParallaxX, parallaxY = layoutParallaxY, scrollOffset = scrollPx, screenWidthPx = screenWidthPx, screenHeightPx = screenHeightPx, 
                                     noiseBitmap = noiseBitmap, onResize = { viewModel.resizeTile(tile.id) }, onPlayPause = { viewModel.mediaPlayPause() }, 
                                     onSkipNext = { viewModel.mediaSkipNext() }, onSkipPrevious = { viewModel.mediaSkipPrevious() }, 
-                                    topNews = topNews, widgetHost = viewModel.appWidgetHost, modifier = Modifier.scale(hoverScale)
+                                    topNews = topNews, googleNews = googleNews, widgetHost = viewModel.appWidgetHost, modifier = Modifier.scale(hoverScale)
                                 )
                                 if (isEditMode && !tile.isSpacer) {
                                     Box(modifier = Modifier.matchParentSize().zIndex(20f), contentAlignment = Alignment.BottomEnd) {
@@ -614,13 +639,13 @@ fun HomeScreen(
                 Box(modifier = Modifier.size(with(density) { draggingTileSize.width.toDp() }, with(density) { draggingTileSize.height.toDp() }).graphicsLayer { translationX = pointerPosition.x - dragStartPointerOffset.x; translationY = pointerPosition.y - dragStartPointerOffset.y; scaleX = 1.15f; scaleY = 1.15f; shadowElevation = 24.dp.toPx(); shape = RoundedCornerShape(12.dp); clip = false }.zIndex(1000f)) {
                     HomeTileItem(
                         tile = tile, isEditMode = true, isHovered = false, tileOpacity = tileOpacity, weatherData = weatherData, 
-                        recentNotifications = tile.packageName?.let { allNotifications[it]?.recentNotifications } ?: emptyList(),
+                        recentNotifications = getRecentNotificationsForTile(tile, allNotifications),
                         allNotifications = allNotifications,
                         currentMedia = currentMedia, calendarEvents = calendarEvents, contacts = contacts, weatherAppPackage = weatherAppPackage, 
                         recentPhotos = recentPhotos, tilePictureEnabled = tilePictureEnabled, 
                         tileBlurRadius = tileBlurRadius, homeScreenBlurEnabled = homeScreenBlurEnabled, 
                         accentColorOverlayEnabled = accentColorOverlayEnabled, solidTilesEnabled = solidTilesEnabled, squareTilesEnabled = squareTilesEnabled,
-                        phoneData = phoneData,
+                        selectedIconPack = selectedIconPack, phoneData = phoneData,
                         wallpaperPainter = wallpaperPainter, wallpaperBitmap = wallpaperBitmap, 
                         parallaxX = layoutParallaxX, parallaxY = layoutParallaxY, scrollOffset = scrollPx, screenWidthPx = screenWidthPx, screenHeightPx = screenHeightPx, 
                         noiseBitmap = noiseBitmap, onResize = { viewModel.resizeTile(tile.id) }, onPlayPause = { viewModel.mediaPlayPause() }, 
@@ -919,22 +944,24 @@ fun HomeTileItem(
     weatherAppPackage: String? = null, recentPhotos: List<Uri> = emptyList(), 
     tilePictureEnabled: Boolean = false, tileBlurRadius: Float = 60f, homeScreenBlurEnabled: Boolean = true, 
     accentColorOverlayEnabled: Boolean = false, solidTilesEnabled: Boolean = false, squareTilesEnabled: Boolean = false,
-    phoneData: PhoneTileData = PhoneTileData(),
+    selectedIconPack: String = "default", phoneData: PhoneTileData = PhoneTileData(),
     wallpaperPainter: Painter? = null, wallpaperBitmap: ImageBitmap? = null, parallaxX: Float = 0f, parallaxY: Float = 0f, scrollOffset: Float = 0f, screenWidthPx: Float = 0f, screenHeightPx: Float = 0f, 
     noiseBitmap: ImageBitmap? = null, onResize: () -> Unit = {}, onPlayPause: () -> Unit = {}, onSkipNext: () -> Unit = {}, 
-    onSkipPrevious: () -> Unit = {}, topNews: List<NewsArticle> = emptyList(), widgetHost: AppWidgetHost? = null
+    onSkipPrevious: () -> Unit = {}, topNews: List<NewsArticle> = emptyList(), googleNews: List<NewsArticle> = emptyList(), widgetHost: AppWidgetHost? = null
 ) {
     val ratio = tile.spanX.toFloat() / tile.spanY.toFloat()
     val context = LocalContext.current
     var tilePosition by remember { mutableStateOf(Offset.Zero) }
-    val icon = remember(tile.packageName, tile.label) {
-        val pm = context.packageManager
-        var d = tile.packageName?.let { pkg -> try { pm.getApplicationIcon(pkg) } catch (_: Exception) { null } }
+    val icon = remember(tile.packageName, tile.label, selectedIconPack) {
+        var d = IconPackManager.loadAppIcon(context, tile.packageName, selectedIconPack, tile.label)
         if (d == null) {
             val fallbacks = when (tile.label.lowercase()) {
                 "settings" -> listOf("com.android.settings", "com.google.android.settings"); "calendar" -> listOf("com.google.android.calendar", "com.android.calendar"); "people" -> listOf("com.android.contacts", "com.google.android.contacts"); "messaging" -> listOf("com.google.android.apps.messaging", "com.android.messaging"); "phone" -> listOf("com.android.dialer", "com.android.phone"); else -> emptyList()
             }
-            for (pkg in fallbacks) { try { val iconFound = pm.getApplicationIcon(pkg); if (iconFound != null) { d = iconFound; break } } catch (_: Exception) {} }
+            for (pkg in fallbacks) {
+                val found = IconPackManager.loadAppIcon(context, pkg, selectedIconPack, tile.label)
+                if (found != null) { d = found; break }
+            }
         }
         d
     }
@@ -1139,7 +1166,7 @@ fun HomeTileItem(
 
                 // Layer 5: Tile Content (Icon + Label)
                 Box(modifier = Modifier.fillMaxSize()) { 
-                    TileDispatcher(tile, weatherData, recentNotifications, allNotifications, currentMedia, calendarEvents, contacts, weatherAppPackage, recentPhotos, icon, onPlayPause, onSkipNext, onSkipPrevious, topNews, currentOpacity, tilePictureEnabled, phoneData = phoneData) 
+                    TileDispatcher(tile, weatherData, recentNotifications, allNotifications, currentMedia, calendarEvents, contacts, weatherAppPackage, recentPhotos, icon, onPlayPause, onSkipNext, onSkipPrevious, topNews, currentOpacity, tilePictureEnabled, phoneData = phoneData, googleNews = googleNews) 
                 }
 
                 if (isEditMode) {
@@ -1153,58 +1180,62 @@ fun HomeTileItem(
                     Box(modifier = Modifier.matchParentSize().border(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f), RoundedCornerShape(12.dp)).zIndex(15f))
                 }
                 
-                if (tile.notificationCount > 0 && !isEditMode) {
+                if (tile.notificationCount > 0 && !isEditMode && tile.size != TileSize.MEDIUM) {
                     Box(
                         modifier = Modifier
                             .matchParentSize()
-                            .padding(if (tile.size == TileSize.SMALL) 2.dp else 6.dp),
+                            .padding(if (tile.size == TileSize.SMALL) 3.dp else 6.dp),
                         contentAlignment = Alignment.TopEnd
                     ) {
-                        if (tile.size == TileSize.SMALL) {
-                            Box(
-                                modifier = Modifier
-                                    .sizeIn(minWidth = 16.dp, minHeight = 16.dp)
-                                    .clip(CircleShape)
-                                    .background(Color.Black.copy(alpha = 0.6f))
-                                    .border(0.5.dp, Color.White.copy(alpha = 0.25f), CircleShape)
-                                    .padding(horizontal = 4.dp, vertical = 1.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = if (tile.notificationCount > 99) "99+" else tile.notificationCount.toString(),
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.White
-                                    ),
-                                    textAlign = TextAlign.Center
-                                )
-                            }
-                        } else if (tile.size != TileSize.MEDIUM) {
-                            Box(
-                                modifier = Modifier
-                                    .sizeIn(minWidth = 22.dp, minHeight = 22.dp)
-                                    .clip(CircleShape)
-                                    .background(Color.Black.copy(alpha = 0.5f))
-                                    .padding(horizontal = 6.dp, vertical = 2.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = if (tile.notificationCount > 99) "99+" else tile.notificationCount.toString(),
-                                    style = MaterialTheme.typography.labelMedium.copy(
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.White
-                                    ),
-                                    textAlign = TextAlign.Center
-                                )
-                            }
+                        val isSmall = tile.size == TileSize.SMALL
+                        Box(
+                            modifier = Modifier
+                                .sizeIn(minWidth = if (isSmall) 18.dp else 24.dp, minHeight = if (isSmall) 18.dp else 24.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.65f))
+                                .border(0.5.dp, Color.White.copy(alpha = 0.25f), CircleShape)
+                                .padding(horizontal = if (isSmall) 4.dp else 7.dp, vertical = if (isSmall) 1.dp else 2.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = if (tile.notificationCount > 99) "99+" else tile.notificationCount.toString(),
+                                style = if (isSmall) MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.Bold) 
+                                        else MaterialTheme.typography.titleSmall.copy(fontSize = 13.sp, fontWeight = FontWeight.Bold),
+                                color = Color.White,
+                                textAlign = TextAlign.Center
+                            )
                         }
                     }
                 }
             }
         }
     }
+}
+
+fun getRecentNotificationsForTile(tile: HomeTile, allNotifications: Map<String, AppNotificationData>): List<NotificationData> {
+    val pkg = tile.packageName ?: return emptyList()
+    val direct = allNotifications[pkg]?.recentNotifications
+    if (!direct.isNullOrEmpty()) return direct
+    
+    val pkgLower = pkg.lowercase()
+    val isMail = pkgLower.contains("gmail") || pkgLower.contains("mail") || pkgLower.contains("outlook") || tile.specialType == "mail"
+    val isMessaging = pkgLower.contains("messaging") || pkgLower.contains("message") || pkgLower.contains("sms")
+    val isPhone = pkgLower.contains("dialer") || pkgLower.contains("phone") || tile.specialType == "phone"
+
+    for ((key, data) in allNotifications) {
+        val keyLower = key.lowercase()
+        if (isMail && (keyLower.contains("gmail") || keyLower.contains("mail") || keyLower.contains("outlook"))) {
+            return data.recentNotifications
+        }
+        if (isMessaging && (keyLower.contains("messaging") || keyLower.contains("message") || keyLower.contains("sms"))) {
+            return data.recentNotifications
+        }
+        if (isPhone && (keyLower.contains("dialer") || keyLower.contains("phone"))) {
+            return data.recentNotifications
+        }
+    }
+
+    return emptyList()
 }
 
 fun isCommunicationApp(packageName: String?): Boolean {
@@ -1224,13 +1255,20 @@ private fun TileDispatcher(
     calendarEvents: List<CalendarEvent>, contacts: List<Contact>, weatherAppPackage: String?, recentPhotos: List<Uri>,
     icon: Drawable?, onPlayPause: () -> Unit, onSkipNext: () -> Unit, onSkipPrevious: () -> Unit, topNews: List<NewsArticle>,
     tileOpacity: Float, tilePictureEnabled: Boolean = false,
-    phoneData: PhoneTileData = PhoneTileData()
+    phoneData: PhoneTileData = PhoneTileData(),
+    googleNews: List<NewsArticle> = emptyList()
 ) {
     val context = LocalContext.current
+    val winResId = remember(tile.packageName, tile.label) {
+        IconRepository.getIconForApp(context, tile.packageName, tile.label)
+    }
     val isPhoneApp = tile.packageName?.lowercase()?.let { it.contains("dialer") || it.contains("phone") } == true || tile.specialType == "phone"
+    val isMailApp = tile.packageName?.lowercase()?.let { it.contains("gmail") || it.contains("mail") || it.contains("outlook") || it.contains("email") } == true || tile.specialType == "mail"
+
     when {
         tile.isFolder -> FolderTileContent(tile, allNotifications, tilePictureEnabled)
-        isPhoneApp -> PhoneLiveTile(tile = tile, phoneData = phoneData, recentNotifications = recentNotifications, defaultIconDrawable = icon, tileOpacity = tileOpacity)
+        isPhoneApp -> PhoneLiveTile(tile = tile, phoneData = phoneData, recentNotifications = recentNotifications, defaultIconDrawable = icon, winResId = winResId, tileOpacity = tileOpacity)
+        isMailApp -> GmailLiveTile(tile = tile, recentNotifications = recentNotifications, defaultIconDrawable = icon, winResId = winResId, tileOpacity = tileOpacity)
         tile.specialType == HomeTile.TYPE_CLOCK_WEATHER -> FlippingTileContainer(isLive = true, front = { ClockWeatherTileContent(tile = tile, weatherData = weatherData, onWeatherClick = { if (weatherAppPackage == "web") context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=weather"))) else context.packageManager.getLaunchIntentForPackage(weatherAppPackage ?: "")?.let { context.startActivity(it) } }) }, back = { WeatherForecastBack(weatherData = weatherData) })
         tile.specialType == HomeTile.TYPE_CLOCK || tile.packageName?.lowercase()?.contains("clock") == true -> ClockTileContent(tile)
         tile.specialType == HomeTile.TYPE_WEATHER || tile.packageName?.lowercase()?.contains("weather") == true -> WeatherTileContent(tile = tile, weatherData = weatherData, onWeatherClick = { if (weatherAppPackage == "web") context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=weather"))) else context.packageManager.getLaunchIntentForPackage(weatherAppPackage ?: "")?.let { context.startActivity(it) } })
@@ -1248,8 +1286,22 @@ private fun TileDispatcher(
                 FlippingTileContainer(isLive = topNews.isNotEmpty(), front = { StandardTileContent(tile, icon) }, back = { NewsLiveTileBack(articles = topNews, tileOpacity = tileOpacity) })
             }
         }
-        tile.packageName == "com.google.android.googlequicksearchbox" && (tile.size != TileSize.SMALL) -> { FlippingTileContainer(isLive = topNews.isNotEmpty(), front = { StandardTileContent(tile, icon) }, back = { NewsLiveTileBack(articles = topNews, tileOpacity = tileOpacity) }) }
-        isCommunicationApp(tile.packageName) && (tile.size == TileSize.WIDE || tile.size == TileSize.LARGE) -> { val pkg = tile.packageName ?: ""; val isMusic = isMusicApp(pkg) && currentMedia?.packageName == pkg; val backContent: @Composable () -> Unit = { when { isMusic -> MusicLiveTile(tile = tile, media = currentMedia, onPlayPause = onPlayPause, onSkipNext = onSkipNext, onSkipPrevious = onSkipPrevious, tileOpacity = tileOpacity); pkg.contains("dialer", true) || pkg.contains("phone", true) -> PhoneLiveTile(tile, phoneData, recentNotifications, icon, tileOpacity); pkg.contains("gmail", true) || pkg.contains("mail", true) || pkg.contains("outlook", true) -> GmailLiveTile(tile, recentNotifications); else -> MessagesLiveTile(tile, recentNotifications) } }; val isPlaying = isMusic && currentMedia?.isPlaying == true; FlippingTileContainer(isLive = isPlaying || recentNotifications.isNotEmpty(), forceBack = isPlaying, front = { StandardTileContent(tile, icon) }, back = { backContent() }) }
+        tile.packageName == "com.google.android.googlequicksearchbox" && (tile.size != TileSize.SMALL) -> { FlippingTileContainer(isLive = googleNews.isNotEmpty(), front = { StandardTileContent(tile, icon, winResId) }, back = { GoogleNewsLiveTileBack(articles = googleNews, tileOpacity = tileOpacity) }) }
+        isCommunicationApp(tile.packageName) && (tile.size == TileSize.WIDE || tile.size == TileSize.LARGE) -> { 
+            val pkg = tile.packageName ?: ""
+            val isMusic = isMusicApp(pkg) && currentMedia?.packageName == pkg
+            val currentWinResId = winResId
+            val backContent: @Composable () -> Unit = { 
+                when { 
+                    isMusic -> MusicLiveTile(tile = tile, media = currentMedia, onPlayPause = onPlayPause, onSkipNext = onSkipNext, onSkipPrevious = onSkipPrevious, tileOpacity = tileOpacity)
+                    pkg.contains("dialer", true) || pkg.contains("phone", true) -> PhoneLiveTile(tile = tile, phoneData = phoneData, recentNotifications = recentNotifications, defaultIconDrawable = icon, winResId = currentWinResId, tileOpacity = tileOpacity)
+                    pkg.contains("gmail", true) || pkg.contains("mail", true) || pkg.contains("outlook", true) -> GmailLiveTile(tile, recentNotifications)
+                    else -> MessagesLiveTile(tile, recentNotifications) 
+                } 
+            }
+            val isPlaying = isMusic && currentMedia?.isPlaying == true
+            FlippingTileContainer(isLive = isPlaying || recentNotifications.isNotEmpty(), forceBack = isPlaying, front = { StandardTileContent(tile, icon, currentWinResId) }, back = { backContent() })
+        }
         else -> { if (recentNotifications.isNotEmpty() && tile.size != TileSize.SMALL) FlippingTileContainer(isLive = true, front = { StandardTileContent(tile, icon) }, back = { GenericNotificationLiveTile(tile, recentNotifications) }) else if (tile.size == TileSize.LARGE) FlippingTileContainer(isLive = true, front = { StandardTileContent(tile, icon) }, back = { DateBackSide() }) else StandardTileContent(tile, icon) }
     }
 }

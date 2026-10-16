@@ -138,25 +138,37 @@ class WindowsNotificationListener : NotificationListenerService() {
                     val notification = sbn.notification ?: return@mapNotNull null
                     val extras = notification.extras ?: return@mapNotNull null
                     val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()
-                    val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
+                    var text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
                     
+                    if (text.isNullOrBlank()) {
+                        text = extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()
+                    }
+                    if (text.isNullOrBlank()) {
+                        val textLines = extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)
+                        if (!textLines.isNullOrEmpty()) {
+                            text = textLines.joinToString(" • ") { it.toString() }
+                        }
+                    }
+                    if (text.isNullOrBlank()) {
+                        text = extras.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString()
+                    }
+
                     val largeIcon = extras.getParcelable<Bitmap>(Notification.EXTRA_LARGE_ICON)
                     val bigPicture = extras.getParcelable<Bitmap>(Notification.EXTRA_PICTURE)
                     
-                    // Filter out some system-only noise but stay lenient for third-party apps
                     val isLocalOnly = (notification.flags and Notification.FLAG_LOCAL_ONLY) != 0
                     if (packageName == "com.android.systemui" && isLocalOnly) {
                         return@mapNotNull null
                     }
 
-                    if (title == null && text == null) return@mapNotNull null
+                    if (title.isNullOrBlank() && text.isNullOrBlank()) return@mapNotNull null
                     
                     NotificationData(
                         packageName = packageName,
                         count = 1,
-                        summary = if (title != null && text != null) "$title: $text" else title ?: text,
-                        sender = title,
-                        content = text,
+                        summary = if (!title.isNullOrBlank() && !text.isNullOrBlank()) "$title: $text" else (title ?: text ?: ""),
+                        sender = title ?: packageName,
+                        content = text ?: title ?: "",
                         postTime = sbn.postTime,
                         largeIcon = largeIcon,
                         bigPicture = bigPicture

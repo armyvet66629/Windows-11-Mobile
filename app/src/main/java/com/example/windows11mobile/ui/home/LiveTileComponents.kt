@@ -5,6 +5,8 @@ import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.provider.AlarmClock
 import android.provider.Settings
+import androidx.core.graphics.drawable.toBitmap
+import androidx.compose.ui.res.painterResource
 import com.example.windows11mobile.data.CalendarEvent
 import com.example.windows11mobile.data.PhoneTileData
 import com.example.windows11mobile.data.PhoneCallItem
@@ -553,18 +555,17 @@ fun PhoneLiveTile(
     phoneData: PhoneTileData = PhoneTileData(),
     recentNotifications: List<NotificationData> = emptyList(),
     defaultIconDrawable: Drawable? = null,
+    winResId: Int? = null,
     tileOpacity: Float = 0.25f
 ) {
-    val totalCounters = phoneData.missedCallsCount + phoneData.voicemailCount
-    val isLive = totalCounters > 0 || phoneData.recentCalls.isNotEmpty() || recentNotifications.isNotEmpty()
-
     FlippingTileContainer(
-        isLive = isLive,
+        isLive = true,
         front = {
             PhoneTileFront(
                 tile = tile,
                 phoneData = phoneData,
-                defaultIconDrawable = defaultIconDrawable
+                defaultIconDrawable = defaultIconDrawable,
+                winResId = winResId
             )
         },
         back = {
@@ -582,45 +583,78 @@ fun PhoneLiveTile(
 fun PhoneTileFront(
     tile: HomeTile,
     phoneData: PhoneTileData,
-    defaultIconDrawable: Drawable? = null
+    defaultIconDrawable: Drawable? = null,
+    winResId: Int? = null
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize().padding(10.dp)) {
-        val isSmall = maxWidth < 150.dp
-        
-        Column(
-            modifier = Modifier.fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                if (defaultIconDrawable != null) {
-                    AsyncImage(
-                        model = defaultIconDrawable,
-                        contentDescription = "Phone",
-                        modifier = Modifier.size(if (isSmall) 32.dp else 52.dp)
-                    )
-                } else {
-                    FluentIcon(
-                        imageVector = Icons.Rounded.Phone,
-                        contentDescription = "Phone",
-                        size = if (isSmall) 32.dp else 52.dp,
-                        gradient = Brush.linearGradient(colors = listOf(Color(0xFF2ECC71), Color(0xFF27AE60)))
-                    )
-                }
-            }
-            
-            if (tile.size != TileSize.SMALL) {
-                Spacer(modifier = Modifier.height(6.dp))
+        val isSmallWidth = maxWidth < 150.dp
+        val isTinyWidth = maxWidth < 100.dp
+        val totalCount = phoneData.missedCallsCount + phoneData.voicemailCount + tile.notificationCount
+        val isMediumWithCount = tile.size == TileSize.MEDIUM && totalCount > 0
+
+        if (isMediumWithCount) {
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(bottom = 20.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                AppIconView(
+                    drawable = defaultIconDrawable,
+                    resId = winResId,
+                    label = "Phone",
+                    modifier = Modifier.size(if (isSmallWidth) 40.dp else 52.dp)
+                )
+
+                Spacer(modifier = Modifier.width(16.dp))
+
                 Text(
-                    text = tile.label.ifBlank { "Phone" },
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    text = if (totalCount > 99) "99+" else totalCount.toString(),
+                    style = MaterialTheme.typography.displayMedium.copy(
+                        fontSize = if (isSmallWidth) 32.sp else 42.sp,
+                        fontWeight = FontWeight.W300,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                )
+            }
+        } else {
+            val iconSize = when (tile.size) {
+                TileSize.SMALL -> if (isTinyWidth) 32.dp else 40.dp
+                TileSize.MEDIUM -> if (isSmallWidth) 56.dp else 72.dp
+                TileSize.WIDE -> if (isSmallWidth) 40.dp else 48.dp
+                TileSize.LARGE -> if (isSmallWidth) 64.dp else 84.dp
+            }
+
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                AppIconView(
+                    drawable = defaultIconDrawable,
+                    resId = winResId,
+                    label = "Phone",
+                    modifier = Modifier.size(iconSize)
                 )
             }
         }
 
-        val totalCount = phoneData.missedCallsCount + phoneData.voicemailCount
+        if (tile.size != TileSize.SMALL) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.BottomStart
+            ) {
+                Text(
+                    text = tile.label.ifBlank { "Phone" },
+                    style = if (isSmallWidth) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+
         if (totalCount > 0) {
             Row(
                 modifier = Modifier.align(Alignment.TopEnd),
@@ -789,18 +823,105 @@ fun MessagesLiveTile(tile: HomeTile, recentNotifications: List<com.example.windo
 }
 
 @Composable
-fun GmailLiveTile(tile: HomeTile, recentNotifications: List<com.example.windows11mobile.data.NotificationData> = emptyList()) {
-    val items = recentNotifications.map { Triple(it.sender ?: "Unknown", it.content ?: "", null) }
-    
-    if (items.isNotEmpty()) {
-        LiveTileList(
-            tile = tile,
-            items = items,
-            icon = FluentIcons.Mail,
-            headerColor = Color(0xFFE74C3C)
-        )
-    } else {
-        StandardTileContent(tile, null)
+fun GmailLiveTile(
+    tile: HomeTile,
+    recentNotifications: List<NotificationData> = emptyList(),
+    defaultIconDrawable: Drawable? = null,
+    winResId: Int? = null,
+    tileOpacity: Float = 0.25f
+) {
+    val isLive = recentNotifications.isNotEmpty()
+
+    FlippingTileContainer(
+        isLive = isLive,
+        front = {
+            StandardTileContent(tile = tile, icon = defaultIconDrawable, winResId = winResId)
+        },
+        back = {
+            MailLiveTileBack(
+                tile = tile,
+                recentNotifications = recentNotifications,
+                tileOpacity = tileOpacity
+            )
+        }
+    )
+}
+
+@Composable
+fun MailLiveTileBack(
+    tile: HomeTile,
+    recentNotifications: List<NotificationData>,
+    tileOpacity: Float = 0.25f
+) {
+    var currentIndex by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(recentNotifications) {
+        if (recentNotifications.size > 1) {
+            while (true) {
+                delay(4000)
+                currentIndex = (currentIndex + 1) % recentNotifications.size
+            }
+        }
+    }
+
+    BoxWithConstraints(modifier = Modifier.fillMaxSize().padding(10.dp)) {
+        val isSmall = maxWidth < 150.dp
+        
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Rounded.Email,
+                    contentDescription = null,
+                    tint = Color(0xFFE74C3C),
+                    modifier = Modifier.size(if (isSmall) 16.dp else 20.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = tile.label.ifBlank { "Mail" },
+                    style = if (isSmall) MaterialTheme.typography.labelMedium else MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            if (recentNotifications.isNotEmpty()) {
+                val notif = recentNotifications.getOrNull(currentIndex) ?: recentNotifications.first()
+
+                AnimatedContent(
+                    targetState = notif,
+                    transitionSpec = {
+                        slideInVertically { it } + fadeIn() togetherWith slideOutVertically { -it } + fadeOut()
+                    },
+                    label = "mailRotate"
+                ) { item ->
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            text = item.sender ?: "New Email",
+                            style = if (isSmall) MaterialTheme.typography.labelMedium else MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = item.content ?: item.summary ?: "Unread message",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                            maxLines = if (tile.size == TileSize.WIDE || tile.size == TileSize.LARGE) 2 else 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            } else {
+                Text(
+                    text = "No unread mail",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+            }
+        }
     }
 }
 
@@ -1783,125 +1904,266 @@ fun FolderStaticGrid(tile: HomeTile, tilePictureEnabled: Boolean = false) {
 }
 
 @Composable
-fun StandardTileContent(tile: HomeTile, icon: android.graphics.drawable.Drawable?) {
+fun StandardTileContent(tile: HomeTile, icon: Drawable?, winResId: Int? = null) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val isSmallWidth = maxWidth < 150.dp
         val isTinyWidth = maxWidth < 100.dp
         val padding = if (isSmallWidth) 6.dp else 12.dp
+        val isMediumWithCount = tile.size == TileSize.MEDIUM && tile.notificationCount > 0
         
-        Column(
-            modifier = Modifier.fillMaxSize().padding(padding),
-            horizontalAlignment = if (tile.size == TileSize.WIDE || tile.size == TileSize.LARGE) Alignment.Start else Alignment.CenterHorizontally,
-            verticalArrangement = if (tile.size == TileSize.WIDE || tile.size == TileSize.LARGE) Arrangement.Top else Arrangement.Center
+        Box(
+            modifier = Modifier.fillMaxSize().padding(padding)
         ) {
-            Row(
-                modifier = if (tile.size == TileSize.WIDE || tile.size == TileSize.LARGE) Modifier.size(if (isSmallWidth) 30.dp else 36.dp) 
-                           else Modifier.weight(1f).fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center
-            ) {
-                val iconSize = when (tile.size) {
-                    TileSize.SMALL -> if (isTinyWidth) 32.dp else 40.dp
-                    TileSize.MEDIUM -> if (tile.notificationCount > 0) (if (isSmallWidth) 42.dp else 52.dp) else (if (isSmallWidth) 56.dp else 72.dp)
-                    TileSize.WIDE -> if (isSmallWidth) 40.dp else 48.dp
-                    TileSize.LARGE -> if (isSmallWidth) 64.dp else 84.dp
-                }
-                
-                if (icon != null) {
-                    AsyncImage(
-                        model = icon,
-                        contentDescription = null,
-                        modifier = Modifier.size(iconSize)
+            if (isMediumWithCount) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(bottom = 20.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    AppIconView(
+                        drawable = icon,
+                        resId = winResId,
+                        label = tile.label,
+                        modifier = Modifier.size(if (isSmallWidth) 40.dp else 52.dp)
                     )
-                } else {
-                    FluentIcon(
-                        imageVector = when (tile.label.lowercase()) {
-                            "settings" -> FluentIcons.Settings
-                            "calendar" -> FluentIcons.Calendar
-                            "people" -> Icons.Rounded.Person
-                            "messaging" -> FluentIcons.Message
-                            "phone" -> Icons.Rounded.Phone
-                            "camera" -> Icons.Rounded.CameraAlt
-                            "mail", "gmail" -> FluentIcons.Mail
-                            "maps" -> Icons.Rounded.Map
-                            "photos" -> FluentIcons.Photos
-                            else -> FluentIcons.Apps
-                        },
-                        contentDescription = null,
-                        size = iconSize,
-                        gradient = Brush.linearGradient(
-                            colors = listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary)
-                        )
-                    )
-                }
+                    
+                    Spacer(modifier = Modifier.width(16.dp))
 
-                if (tile.notificationCount > 0 && tile.size == TileSize.MEDIUM) {
-                    Spacer(modifier = Modifier.width(10.dp))
                     Text(
                         text = if (tile.notificationCount > 99) "99+" else tile.notificationCount.toString(),
                         style = MaterialTheme.typography.displayMedium.copy(
-                            fontSize = if (isSmallWidth) 28.sp else 38.sp,
+                            fontSize = if (isSmallWidth) 32.sp else 42.sp,
                             fontWeight = FontWeight.W300,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                     )
                 }
+            } else {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    val iconSize = when (tile.size) {
+                        TileSize.SMALL -> if (isTinyWidth) 32.dp else 40.dp
+                        TileSize.MEDIUM -> if (isSmallWidth) 56.dp else 72.dp
+                        TileSize.WIDE -> if (isSmallWidth) 40.dp else 48.dp
+                        TileSize.LARGE -> if (isSmallWidth) 64.dp else 84.dp
+                    }
+                    
+                    AppIconView(
+                        drawable = icon,
+                        resId = winResId,
+                        label = tile.label,
+                        modifier = Modifier.size(iconSize)
+                    )
+                }
             }
             
             if (tile.size != TileSize.SMALL) {
-                if (tile.size == TileSize.WIDE || tile.size == TileSize.LARGE) {
-                    Spacer(modifier = Modifier.height(if (isSmallWidth) 4.dp else 8.dp))
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.BottomStart
+                ) {
                     Text(
                         text = tile.label,
-                        style = if (isSmallWidth) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Black,
+                        style = if (isSmallWidth) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        softWrap = false
-                    )
-                    if (tile.notificationSummary != null) {
-                        Spacer(modifier = Modifier.height(1.dp))
-                        Text(
-                            text = tile.notificationSummary,
-                            style = if (isSmallWidth) MaterialTheme.typography.labelSmall else MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = if (tile.size == TileSize.LARGE) 6 else 1,
-                            overflow = TextOverflow.Ellipsis,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    } else if (!isSmallWidth) {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "No new notifications",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                        )
-                    } else {
-                        // Dense mode summary
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "No notifications",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                        )
-                    }
-                } else {
-                    Text(
-                        text = tile.label,
-                        style = if (isSmallWidth) MaterialTheme.typography.labelMedium.copy(fontSize = 11.sp) else MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        textAlign = TextAlign.Center,
-                        softWrap = false,
-                        color = MaterialTheme.colorScheme.onSurface
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
+            }
+
+            if (tile.notificationCount > 0 && !isMediumWithCount) {
+                TileNotificationBadge(
+                    count = tile.notificationCount,
+                    modifier = Modifier.align(Alignment.TopEnd)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun TileNotificationBadge(count: Int, modifier: Modifier = Modifier) {
+    if (count > 0) {
+        Box(
+            modifier = modifier
+                .clip(CircleShape)
+                .background(Color(0xFFE74C3C))
+                .padding(horizontal = 6.dp, vertical = 2.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = if (count > 99) "99+" else count.toString(),
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            )
+        }
+    }
+}
+
+@Composable
+fun AppIconView(
+    drawable: Drawable?,
+    resId: Int?,
+    label: String,
+    modifier: Modifier = Modifier,
+    tint: Color = Color.White
+) {
+    if (drawable != null) {
+        val bitmap = remember(drawable) { drawable.toBitmap().asImageBitmap() }
+        Image(
+            bitmap = bitmap,
+            contentDescription = label,
+            modifier = modifier
+        )
+    } else if (resId != null && resId != 0) {
+        Icon(
+            painter = painterResource(id = resId),
+            contentDescription = label,
+            modifier = modifier,
+            tint = tint
+        )
+    } else {
+        Box(
+            modifier = modifier.background(MaterialTheme.colorScheme.primaryContainer),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = label.firstOrNull()?.toString() ?: "?",
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+        }
+    }
+}
+
+@Composable
+fun GoogleNewsLiveTileBack(
+    articles: List<NewsArticle>,
+    tileOpacity: Float = 0.25f
+) {
+    var currentIndex by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(articles) {
+        if (articles.size > 1) {
+            while (true) {
+                delay(5000)
+                currentIndex = (currentIndex + 1) % articles.size
+            }
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        if (articles.isNotEmpty()) {
+            val article = articles.getOrNull(currentIndex) ?: articles.first()
+
+            AnimatedContent(
+                targetState = article,
+                transitionSpec = {
+                    slideInVertically { it } + fadeIn() togetherWith slideOutVertically { -it } + fadeOut()
+                },
+                label = "googleNewsRotate"
+            ) { item ->
+                Box(modifier = Modifier.fillMaxSize()) {
+                    // Full Tile Backdrop Image
+                    if (!item.urlToImage.isNullOrBlank()) {
+                        AsyncImage(
+                            model = item.urlToImage,
+                            contentDescription = item.title,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                        // Dark Gradient Scrim Overlay for high contrast readability
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(
+                                    Brush.verticalGradient(
+                                        colors = listOf(
+                                            Color.Black.copy(alpha = 0.45f),
+                                            Color.Black.copy(alpha = 0.85f)
+                                        )
+                                    )
+                                )
+                        )
+                    }
+
+                    // Foreground Text Content
+                    BoxWithConstraints(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(10.dp)
+                    ) {
+                        val isSmall = maxWidth < 150.dp
+
+                        Column(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Public,
+                                    contentDescription = "Google News",
+                                    tint = Color(0xFF669DF6),
+                                    modifier = Modifier.size(if (isSmall) 16.dp else 20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Google News",
+                                    style = if (isSmall) MaterialTheme.typography.labelMedium else MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                            }
+
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(
+                                    text = item.source.name.uppercase(),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF669DF6),
+                                    letterSpacing = 0.8.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = item.title,
+                                    style = if (isSmall) MaterialTheme.typography.labelMedium else MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                if (!item.description.isNullOrBlank() && item.description != item.title) {
+                                    Text(
+                                        text = item.description,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color.White.copy(alpha = 0.8f),
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            Box(
+                modifier = Modifier.fillMaxSize().padding(10.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Loading Google News...",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
             }
         }
     }

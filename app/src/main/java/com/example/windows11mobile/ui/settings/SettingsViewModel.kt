@@ -89,6 +89,9 @@ class SettingsViewModel(
     val squareTilesEnabled: StateFlow<Boolean> = repository.squareTilesEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    val selectedIconPack: StateFlow<String> = repository.selectedIconPack
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "default")
+
     val rssFeeds: StateFlow<Set<String>> = repository.rssFeeds
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
 
@@ -143,6 +146,12 @@ class SettingsViewModel(
     fun setSquareTilesEnabled(enabled: Boolean) {
         viewModelScope.launch {
             repository.setSquareTilesEnabled(enabled)
+        }
+    }
+
+    fun setSelectedIconPack(packageName: String) {
+        viewModelScope.launch {
+            repository.setSelectedIconPack(packageName)
         }
     }
 

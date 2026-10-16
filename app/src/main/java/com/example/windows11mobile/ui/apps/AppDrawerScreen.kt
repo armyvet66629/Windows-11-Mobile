@@ -43,6 +43,7 @@ import com.example.windows11mobile.ui.components.AdvancedFluentMenu
 import com.example.windows11mobile.ui.theme.FluentIcons
 import com.example.windows11mobile.ui.components.FluentIcon
 import androidx.compose.ui.graphics.Brush
+import com.example.windows11mobile.data.IconPackManager
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -59,6 +60,7 @@ fun AppDrawerScreen(
     val apps by viewModel.filteredApps.collectAsStateWithLifecycle()
     val tileOpacity by viewModel.tileOpacity.collectAsStateWithLifecycle()
     val tileBlurRadius by viewModel.tileBlurRadius.collectAsStateWithLifecycle()
+    val selectedIconPack by viewModel.selectedIconPack.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -191,6 +193,7 @@ fun AppDrawerScreen(
                                 appList.forEach { app ->
                                     AppItem(
                                         app = app,
+                                        selectedIconPack = selectedIconPack,
                                         onClick = { onAppClick(app) },
                                         onLongClick = { selectedAppForMenu = app }
                                     )
@@ -447,9 +450,11 @@ fun LauncherSettingsItem(
 @Composable
 fun AppItem(
     app: AppInfo,
+    selectedIconPack: String = "default",
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
+    val context = LocalContext.current
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -465,7 +470,10 @@ fun AppItem(
                 .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            val icon = app.icon?.toBitmap()?.asImageBitmap()
+            val loadedDrawable = remember(app.packageName, app.name, selectedIconPack) {
+                IconPackManager.loadAppIcon(context, app.packageName, selectedIconPack, app.name) ?: app.icon
+            }
+            val icon = loadedDrawable?.toBitmap()?.asImageBitmap()
             if (icon != null) {
                 Image(
                     bitmap = icon,

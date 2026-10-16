@@ -1,6 +1,7 @@
 package com.example.windows11mobile.data
 
 import android.graphics.Bitmap
+import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
@@ -37,6 +38,7 @@ object NotificationManager {
     val currentMedia = _currentMedia.asStateFlow()
 
     fun updateAll(data: Map<String, AppNotificationData>) {
+        Log.d("NotificationManager", "updateAll: posting ${data.size} app notifications -> ${data.mapValues { it.value.totalCount }}")
         _notifications.value = data
     }
 
@@ -45,6 +47,7 @@ object NotificationManager {
     }
 
     fun clearNotifications(packageName: String) {
+        Log.d("NotificationManager", "clearNotifications for $packageName")
         _notifications.value = _notifications.value.filterKeys { it != packageName }
     }
 }

@@ -24,6 +24,10 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
@@ -39,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.asImageBitmap
@@ -51,11 +56,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.zIndex
 import androidx.core.graphics.drawable.toBitmap
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.example.windows11mobile.data.AppInfo
+import com.example.windows11mobile.data.IconPackManager
+import com.example.windows11mobile.data.IconRepository
+import com.example.windows11mobile.data.WindowsIconInfo
 import com.example.windows11mobile.ui.components.FluentEffect
 import com.example.windows11mobile.ui.components.FluentSurface
 import com.example.windows11mobile.ui.news.CustomizeFeedDialog
@@ -92,6 +101,9 @@ fun SettingsScreen(
     val accentColorOverlayEnabled by viewModel.accentColorOverlayEnabled.collectAsStateWithLifecycle()
     val solidTilesEnabled by viewModel.solidTilesEnabled.collectAsStateWithLifecycle()
     val squareTilesEnabled by viewModel.squareTilesEnabled.collectAsStateWithLifecycle()
+    val selectedIconPack by viewModel.selectedIconPack.collectAsStateWithLifecycle()
+    
+    var showIconPackPicker by remember { mutableStateOf(false) }
     
     val categories = listOf("Personalization", "Launcher", "System", "Widgets", "About")
     val pagerState = rememberPagerState(initialPage = 0) { categories.size }
@@ -347,6 +359,26 @@ fun SettingsScreen(
                                 )
                             }
                             item {
+                                val currentPackLabel = remember(selectedIconPack) {
+                                    if (selectedIconPack == "default" || selectedIconPack.isBlank()) "System Default"
+                                    else {
+                                        try {
+                                            context.packageManager.getApplicationLabel(
+                                                context.packageManager.getApplicationInfo(selectedIconPack, 0)
+                                            ).toString()
+                                        } catch (_: Exception) { selectedIconPack }
+                                    }
+                                }
+                                SettingsClickableItem(
+                                    title = "Icon Pack",
+                                    subtitle = currentPackLabel,
+                                    icon = Icons.Rounded.Apps,
+                                    tileOpacity = tileOpacity,
+                                    blurRadius = tileBlurRadius.toInt(),
+                                    onClick = { showIconPackPicker = true }
+                                )
+                            }
+                            item {
                                 SettingsToggleItem(
                                     title = "Square Tiles",
                                     subtitle = "Use sharp square corners instead of rounded corners",
@@ -526,6 +558,14 @@ fun SettingsScreen(
         )
     }
 
+    if (showIconPackPicker) {
+        IconPackPickerDialog(
+            selectedPack = selectedIconPack,
+            onDismiss = { showIconPackPicker = false },
+            onPackSelected = { viewModel.setSelectedIconPack(it) }
+        )
+    }
+
     if (showWeatherPicker) {
         WeatherAppPicker(
             apps = installedApps,
@@ -549,24 +589,259 @@ fun SettingsScreen(
 }
 
 @Composable
+fun IconPackPickerDialog(
+    selectedPack: String,
+    onDismiss: () -> Unit,
+    onPackSelected: (String) -> Unit
+) {
+    val context = LocalContext.current
+    var showBrowser by remember { mutableStateOf(false) }
+    val installedPacks = remember(context) {
+        IconPackManager.getInstalledIconPacks(context)
+    }
+
+    if (showBrowser) {
+        WindowsIconsBrowserDialog(onDismiss = { showBrowser = false })
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        FluentSurface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            shape = RoundedCornerShape(24.dp),
+            alpha = 0.95f,
+            effect = FluentEffect.ACRYLIC,
+            blurRadius = 120,
+            tintColor = Color.Black.copy(alpha = 0.35f)
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(20.dp)
+                    .fillMaxWidth()
+            ) {
+                Text(
+                    text = "Select Icon Pack",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+
+                LazyColumn(
+                    modifier = Modifier.heightIn(max = 380.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(installedPacks) { pack ->
+                        val isSelected = pack.packageName == selectedPack || (selectedPack == "default" && pack.packageName == "default")
+                        
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(
+                                    if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+                                    else Color.White.copy(alpha = 0.05f)
+                                )
+                                .clickable {
+                                    onPackSelected(pack.packageName)
+                                    onDismiss()
+                                }
+                                .padding(12.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (pack.icon != null) {
+                                    AsyncImage(
+                                        model = pack.icon,
+                                        contentDescription = pack.label,
+                                        modifier = Modifier.size(36.dp)
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Apps,
+                                        contentDescription = pack.label,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(36.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    text = pack.label,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                if (isSelected) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Check,
+                                        contentDescription = "Selected",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                            if (pack.packageName == "windowsicons") {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                OutlinedButton(
+                                    onClick = { showBrowser = true },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Icon(Icons.Rounded.Search, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Browse 1,260 WindowsIcons", style = MaterialTheme.typography.labelMedium)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = onDismiss) {
+                        Text("Cancel", color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun WindowsIconsBrowserDialog(
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    var searchQuery by remember { mutableStateOf("") }
+    val allIcons by produceState<List<WindowsIconInfo>>(initialValue = emptyList(), context) {
+        value = IconRepository.getWindowsIcons(context)
+    }
+
+    val filteredIcons = remember(searchQuery, allIcons) {
+        if (searchQuery.isBlank()) allIcons
+        else allIcons.filter { it.name.lowercase().contains(searchQuery.lowercase()) || it.resourceName.lowercase().contains(searchQuery.lowercase()) }
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        FluentSurface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.85f)
+                .padding(8.dp),
+            shape = RoundedCornerShape(24.dp),
+            alpha = 0.95f,
+            effect = FluentEffect.ACRYLIC,
+            blurRadius = 120,
+            tintColor = Color.Black.copy(alpha = 0.35f)
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(16.dp)
+                    .fillMaxSize()
+            ) {
+                Text(
+                    text = "WindowsIcons (${filteredIcons.size})",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "Templarian Windows Phone Vector Set",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Search 1,260 icons...") },
+                    leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                    trailingIcon = {
+                        if (searchQuery.isNotBlank()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Rounded.Close, contentDescription = "Clear")
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    singleLine = true
+                )
+
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(minSize = 72.dp),
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(filteredIcons, key = { it.resourceName }) { iconInfo ->
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color.White.copy(alpha = 0.05f))
+                                .padding(8.dp)
+                        ) {
+                            Icon(
+                                painter = painterResource(id = iconInfo.resId),
+                                contentDescription = iconInfo.name,
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.size(36.dp)
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = iconInfo.name,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 9.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                textAlign = TextAlign.Center,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = onDismiss) {
+                        Text("Close", color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun GlassySectionHeader(text: String, blurRadius: Int = 80) {
-    FluentSurface(
-        modifier = Modifier.padding(top = 24.dp, bottom = 8.dp),
-        shape = RoundedCornerShape(12.dp),
-        alpha = 0.3f,
-        effect = FluentEffect.ACRYLIC,
-        blurRadius = blurRadius,
-        tintColor = Color.White.copy(alpha = 0.1f),
-        noiseOpacity = 0.04f,
-        luminosityAlpha = 0.2f
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 18.dp, bottom = 6.dp)
     ) {
         Text(
-            text = text,
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Black,
-            color = MaterialTheme.colorScheme.primary,
-            letterSpacing = 1.2.sp
+            text = text.uppercase(),
+            style = MaterialTheme.typography.labelLarge.copy(
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.5.sp
+            ),
+            color = MaterialTheme.colorScheme.primary
         )
     }
 }
@@ -721,24 +996,47 @@ fun SettingsToggleItem(title: String, subtitle: String, icon: ImageVector, check
         effect = FluentEffect.ACRYLIC,
         blurRadius = blurRadius,
         tintColor = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) 
-            Color.Black.copy(alpha = 0.2f * tileOpacity) 
+            Color.Black.copy(alpha = 0.25f * tileOpacity) 
         else 
-            Color(0xFFD0D0D0).copy(alpha = 0.15f * tileOpacity), // Greyish for light mode
-        shape = RoundedCornerShape(20.dp),
-        luminosityAlpha = 0.1f * tileOpacity // Scale luminosity with opacity
+            Color(0xFFD0D0D0).copy(alpha = 0.15f * tileOpacity),
+        shape = RoundedCornerShape(16.dp),
+        luminosityAlpha = 0.1f * tileOpacity,
+        borderAlpha = 0.12f
     ) {
-        Row(modifier = Modifier.padding(20.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier
+                .padding(horizontal = 16.dp, vertical = 14.dp)
+                .fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Box(
-                modifier = Modifier.size(40.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary)
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
             }
-            Spacer(modifier = Modifier.width(20.dp))
+            Spacer(modifier = Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
+                )
             }
+            Spacer(modifier = Modifier.width(8.dp))
             Switch(
                 checked = checked,
                 onCheckedChange = onCheckedChange,
@@ -754,33 +1052,63 @@ fun SettingsToggleItem(title: String, subtitle: String, icon: ImageVector, check
 @Composable
 fun SettingsClickableItem(title: String, subtitle: String, icon: ImageVector, onClick: () -> Unit, tileOpacity: Float, blurRadius: Int = 100, trailingContent: @Composable (() -> Unit)? = null) {
     FluentSurface(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
         alpha = tileOpacity,
         effect = FluentEffect.ACRYLIC,
         blurRadius = blurRadius,
         tintColor = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) 
-            Color.Black.copy(alpha = 0.2f * tileOpacity) 
+            Color.Black.copy(alpha = 0.25f * tileOpacity) 
         else 
-            Color(0xFFD0D0D0).copy(alpha = 0.15f * tileOpacity), // Greyish for light mode
-        shape = RoundedCornerShape(20.dp),
-        luminosityAlpha = 0.1f * tileOpacity // Scale luminosity with opacity
+            Color(0xFFD0D0D0).copy(alpha = 0.15f * tileOpacity),
+        shape = RoundedCornerShape(16.dp),
+        luminosityAlpha = 0.1f * tileOpacity,
+        borderAlpha = 0.12f
     ) {
-        Row(modifier = Modifier.padding(20.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier
+                .padding(horizontal = 16.dp, vertical = 14.dp)
+                .fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Box(
-                modifier = Modifier.size(40.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary)
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
             }
-            Spacer(modifier = Modifier.width(20.dp))
+            Spacer(modifier = Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
+                )
             }
+            Spacer(modifier = Modifier.width(8.dp))
             if (trailingContent != null) {
                 trailingContent()
             } else {
-                Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                Icon(
+                    imageVector = Icons.Rounded.ChevronRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                    modifier = Modifier.size(22.dp)
+                )
             }
         }
     }
@@ -815,15 +1143,30 @@ fun WeatherAppPicker(apps: List<AppInfo>, onDismiss: () -> Unit, onAppSelected: 
 
 @Composable
 fun PageManagerDialog(currentOrder: List<String>, hiddenPages: Set<String>, onDismiss: () -> Unit, onOrderChange: (List<String>) -> Unit, onHiddenPagesChange: (Set<String>) -> Unit) {
+    val pageNames = mapOf(
+        "route_buddy" to "Route Buddy",
+        "notes" to "Sticky Notes",
+        "board" to "Widgets Board",
+        "desktop" to "Home Screen",
+        "apps" to "App List",
+        "people" to "People Hub"
+    )
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Manage Pages") },
         text = {
             Column {
                 currentOrder.forEach { page ->
+                    val displayName = pageNames[page] ?: page.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                        Checkbox(checked = !hiddenPages.contains(page), onCheckedChange = { isVisible -> val newHidden = if (isVisible) hiddenPages - page else hiddenPages + page; onHiddenPagesChange(newHidden) })
-                        Text(page, modifier = Modifier.weight(1f))
+                        Checkbox(
+                            checked = !hiddenPages.contains(page),
+                            onCheckedChange = { isVisible ->
+                                val newHidden = if (isVisible) hiddenPages - page else hiddenPages + page
+                                onHiddenPagesChange(newHidden)
+                            }
+                        )
+                        Text(displayName, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                     }
                 }
             }

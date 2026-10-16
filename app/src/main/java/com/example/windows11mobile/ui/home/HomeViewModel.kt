@@ -93,6 +93,18 @@ class HomeViewModel(
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val googleNews: StateFlow<List<NewsArticle>> = flow {
+        while (true) {
+            val articles = try {
+                GoogleNewsRepository.fetchGoogleNews()
+            } catch (e: Exception) {
+                emptyList()
+            }
+            emit(articles)
+            delay(900000) // Refreshes periodically every 15 minutes
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     fun refreshNews() {
         _newsTrigger.value = System.currentTimeMillis()
     }
@@ -111,18 +123,45 @@ class HomeViewModel(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     private val _rawTiles = MutableStateFlow<List<HomeTile>>(emptyList())
-    val tiles = combine(_rawTiles, NotificationManager.notifications, settingsRepository.hiddenNativeWidgets) { tiles, notifications, hidden ->
+    val tiles = combine(_rawTiles, NotificationManager.notifications, phoneTileData, settingsRepository.hiddenNativeWidgets) { tiles, notifications, phoneData, hidden ->
+        fun findAppNotification(tile: HomeTile): AppNotificationData? {
+            val pkg = tile.packageName ?: return null
+            
+            val directMatch = notifications[pkg]
+            if (directMatch != null) return directMatch
+            
+            val pkgLower = pkg.lowercase()
+            for ((key, notif) in notifications) {
+                val keyLower = key.lowercase()
+                if (keyLower == pkgLower) return notif
+                if (pkgLower.contains("messaging") && keyLower.contains("messaging")) return notif
+                if (pkgLower.contains("mail") && keyLower.contains("mail")) return notif
+                if (pkgLower.contains("dialer") && keyLower.contains("dialer")) return notif
+            }
+            return null
+        }
+
         fun mapTile(tile: HomeTile): HomeTile {
-            val appNotification = notifications[tile.packageName]
+            val isPhone = tile.specialType == "phone" || tile.packageName?.lowercase()?.let { it.contains("dialer") || it.contains("phone") } == true
+            val appNotification = findAppNotification(tile)
             val lastNotification = appNotification?.recentNotifications?.firstOrNull()
             
             val updatedSubTiles = tile.subTiles.map { mapTile(it) }
+            
             val totalCount = if (tile.isFolder) {
                 updatedSubTiles.sumOf { it.notificationCount }
+            } else if (isPhone) {
+                val phoneCallsCount = phoneData.missedCallsCount + phoneData.voicemailCount
+                val notifCount = appNotification?.totalCount ?: 0
+                maxOf(phoneCallsCount, notifCount)
             } else {
                 appNotification?.totalCount ?: 0
             }
             
+            if (totalCount > 0) {
+                Log.d("TileCounter", "Tile '${tile.label}' (${tile.packageName}) -> notificationCount=$totalCount")
+            }
+
             return tile.copy(
                 notificationCount = totalCount,
                 notificationSummary = lastNotification?.summary,
@@ -134,7 +173,7 @@ class HomeViewModel(
         }
         
         tiles.filter { it.specialType == null || !hidden.contains(it.specialType) }.map { mapTile(it) }
-    }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     val recentNotifications = NotificationManager.notifications
     val currentMedia = NotificationManager.currentMedia
@@ -229,6 +268,12 @@ class HomeViewModel(
         false
     )
 
+    val selectedIconPack = settingsRepository.selectedIconPack.stateIn(
+        viewModelScope,
+        SharingStarted.Eagerly,
+        "default"
+    )
+
     init {
         viewModelScope.launch {
             while(true) {
@@ -309,7 +354,7 @@ class HomeViewModel(
     )
 
     private var saveJob: Job? = null
-    private fun saveTiles() {
+    fun saveTiles() {
         saveJob?.cancel()
         saveJob = viewModelScope.launch {
             delay(1000)
@@ -327,40 +372,62 @@ class HomeViewModel(
         }
     }
 
-    fun moveTile(fromIndex: Int, toIndex: Int) {
+    fun reorderTile(fromIndex: Int, toIndex: Int) {
         val list = _rawTiles.value.toMutableList()
-        if (fromIndex in list.indices && toIndex in list.indices) {
+        if (fromIndex in list.indices && toIndex in list.indices && fromIndex != toIndex) {
+            val item = list.removeAt(fromIndex)
+            list.add(toIndex, item)
+            _rawTiles.value = list
+        }
+    }
+
+    fun combineTilesIntoFolder(fromTileId: String, targetTileId: String) {
+        val list = _rawTiles.value.toMutableList()
+        val fromIndex = list.indexOfFirst { it.id == fromTileId }
+        val toIndex = list.indexOfFirst { it.id == targetTileId }
+        if (fromIndex != -1 && toIndex != -1 && fromIndex != toIndex) {
             val fromItem = list[fromIndex]
             val toItem = list[toIndex]
-            if (fromIndex == toIndex) { saveTiles(); return }
             val isEligibleMember = { tile: HomeTile -> !tile.isWidget && !tile.isSpacer }
+
             if (toItem.isFolder && isEligibleMember(fromItem)) {
-                val updatedFolder = if (fromItem.isFolder) toItem.copy(subTiles = toItem.subTiles + fromItem.subTiles) else toItem.copy(subTiles = toItem.subTiles + fromItem.copy(size = TileSize.SMALL))
+                val updatedFolder = if (fromItem.isFolder) {
+                    toItem.copy(subTiles = toItem.subTiles + fromItem.subTiles)
+                } else {
+                    toItem.copy(subTiles = toItem.subTiles + fromItem.copy(size = TileSize.SMALL))
+                }
                 list.removeAt(fromIndex)
                 val adjustedToIndex = list.indexOfFirst { it.id == toItem.id }
                 if (adjustedToIndex != -1) list[adjustedToIndex] = updatedFolder
-                _rawTiles.value = list; saveTiles(); return
+                _rawTiles.value = list
+                saveTiles()
+                return
             }
-            if (fromItem.isFolder && isEligibleMember(toItem)) {
-                val updatedFolder = fromItem.copy(subTiles = fromItem.subTiles + toItem.copy(size = TileSize.SMALL))
-                val firstIdx = fromIndex.coerceAtMost(toIndex); val secondIdx = fromIndex.coerceAtLeast(toIndex)
-                list.removeAt(secondIdx); list.removeAt(firstIdx)
-                val insertPos = if (toIndex > fromIndex) toIndex - 1 else toIndex
-                list.add(insertPos.coerceIn(0, list.size), updatedFolder)
-                _rawTiles.value = list; saveTiles(); return
-            }
+
             if (isEligibleMember(fromItem) && isEligibleMember(toItem)) {
-                val newFolder = HomeTile(id = UUID.randomUUID().toString(), label = "New Folder", isFolder = true, size = TileSize.MEDIUM, subTiles = listOf(toItem.copy(size = TileSize.SMALL), fromItem.copy(size = TileSize.SMALL)))
-                val firstIdx = fromIndex.coerceAtMost(toIndex); val secondIdx = fromIndex.coerceAtLeast(toIndex)
-                list.removeAt(secondIdx); list.removeAt(firstIdx)
+                val newFolder = HomeTile(
+                    id = UUID.randomUUID().toString(),
+                    label = "New Folder",
+                    isFolder = true,
+                    size = TileSize.MEDIUM,
+                    subTiles = listOf(toItem.copy(size = TileSize.SMALL), fromItem.copy(size = TileSize.SMALL))
+                )
+                val firstIdx = fromIndex.coerceAtMost(toIndex)
+                val secondIdx = fromIndex.coerceAtLeast(toIndex)
+                list.removeAt(secondIdx)
+                list.removeAt(firstIdx)
                 val insertPos = if (toIndex > fromIndex) toIndex - 1 else toIndex
                 list.add(insertPos.coerceIn(0, list.size), newFolder)
-                _rawTiles.value = list; saveTiles(); return
+                _rawTiles.value = list
+                saveTiles()
+                return
             }
-            val item = list.removeAt(fromIndex)
-            list.add(toIndex, item)
-            _rawTiles.value = list; saveTiles()
         }
+    }
+
+    fun moveTile(fromIndex: Int, toIndex: Int) {
+        reorderTile(fromIndex, toIndex)
+        saveTiles()
     }
 
     fun removeTileFromFolder(folderId: String, tileId: String, toIndex: Int = -1) {

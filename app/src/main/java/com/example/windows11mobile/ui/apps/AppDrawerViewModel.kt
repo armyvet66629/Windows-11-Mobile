@@ -34,6 +34,9 @@ class AppDrawerViewModel(
     val tileBlurRadius: StateFlow<Float> = settingsRepository.tileBlurRadius
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 120f)
 
+    val selectedIconPack: StateFlow<String> = settingsRepository.selectedIconPack
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "default")
+
     private val _allApps = MutableStateFlow<List<AppInfo>>(emptyList())
     
     val filteredApps: StateFlow<List<AppInfo>> = combine(_allApps, _searchQuery) { apps, query ->

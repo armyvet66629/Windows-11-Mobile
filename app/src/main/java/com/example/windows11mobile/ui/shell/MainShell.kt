@@ -10,6 +10,8 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.util.Log
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -21,6 +23,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asComposeRenderEffect
@@ -137,6 +140,10 @@ fun MainShell(
     val pagerState = rememberPagerState(
         initialPage = visiblePages.indexOf("desktop").coerceAtLeast(0)
     ) { visiblePages.size }
+
+    val homeReturnAnim = remember { Animatable(1f) }
+    val win10EaseOut = remember { CubicBezierEasing(0.0f, 0.0f, 0.2f, 1.0f) }
+    var isHomeReturnAnimating by remember { mutableStateOf(false) }
     
     LaunchedEffect(homeViewModel) {
         homeViewModel.homeButtonPressed.collect {
@@ -148,11 +155,17 @@ fun MainShell(
             // 2. Scroll pager back to desktop
             val desktopIndex = visiblePages.indexOf("desktop")
             if (desktopIndex != -1 && pagerState.currentPage != desktopIndex) {
-                pagerState.animateScrollToPage(
-                    page = desktopIndex,
-                    animationSpec = tween(400, easing = FastOutSlowInEasing)
-                )
+                pagerState.scrollToPage(desktopIndex)
             }
+
+            // 3. Trigger synchronized Windows 10 Mobile "Return to Homescreen" motion
+            isHomeReturnAnimating = true
+            homeReturnAnim.snapTo(0f)
+            homeReturnAnim.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(220, easing = win10EaseOut)
+            )
+            isHomeReturnAnimating = false
         }
     }
     
@@ -161,6 +174,22 @@ fun MainShell(
     }
     
     val currentRoute = backStack.lastOrNull()
+
+    val homeReturnProgress = homeReturnAnim.value
+    // Launcher homescreen scales up from 0.96f to 1.0f and fades in from 0.0f to 1.0f
+    val homeScale = if (isHomeReturnAnimating) 0.96f + (0.04f * homeReturnProgress) else 1f
+    val homeAlpha = if (isHomeReturnAnimating) homeReturnProgress else 1f
+
+    // Outgoing app window scales down from 1.0f to 0.92f and fades out from 1.0f to 0.0f
+    val appScale = 1.0f - (0.08f * homeReturnProgress)
+    val appAlpha = (1.0f - homeReturnProgress).coerceIn(0f, 1f)
+
+    // Background blur: increases during first half (0 to 24dp), then resolves into launcher background in second half
+    val blurRadiusDp = if (homeReturnProgress < 0.5f) {
+        (homeReturnProgress * 2f * 24f).dp
+    } else {
+        ((1f - homeReturnProgress) * 2f * 24f).dp
+    }
 
     val shellAlpha = 1f 
     val shellScale by animateFloatAsState(
@@ -214,7 +243,15 @@ fun MainShell(
                 )
             }
 
-            Box(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        scaleX = homeScale
+                        scaleY = homeScale
+                        alpha = homeAlpha
+                    }
+            ) {
                 if (currentRoute in listOf(Dest.Desktop, Dest.AppDrawer, Dest.NewsFeed, null)) {
                     HorizontalPager(
                         state = pagerState,
@@ -223,6 +260,22 @@ fun MainShell(
                     ) { pageIndex ->
                         val pageId = visiblePages.getOrNull(pageIndex) ?: ""
                         when (pageId) {
+                            "route_buddy" -> {
+                                com.example.windows11mobile.ui.route.RouteBuddyScreen(
+                                    onOpenNavigation = { destination ->
+                                        val gmmIntentUri = Uri.parse("google.navigation:q=${Uri.encode(destination)}")
+                                        val mapIntent = Intent(Intent.ACTION_VIEW, gmmIntentUri).apply {
+                                            setPackage("com.google.android.apps.maps")
+                                        }
+                                        try {
+                                            context.startActivity(mapIntent)
+                                        } catch (_: Exception) {
+                                            val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/maps/dir/?api=1&destination=${Uri.encode(destination)}"))
+                                            try { context.startActivity(webIntent) } catch (_: Exception) {}
+                                        }
+                                    }
+                                )
+                            }
                             "board" -> {
                                 val viewModel: NewsFeedViewModel = viewModel(
                                     factory = NewsFeedViewModelFactory(newsRepository, rssRepository, settingsRepository, context)
@@ -358,6 +411,25 @@ fun MainShell(
                             .zIndex(1000f) // Ensure it's above NavDisplay
                     )
                 }
+            }
+
+            // Windows 10 Mobile Outgoing App Window Transition Overlay
+            if (isHomeReturnAnimating && appAlpha > 0.01f) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            scaleX = appScale
+                            scaleY = appScale
+                            alpha = appAlpha
+                        }
+                        .then(
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && blurRadiusDp.value > 0.5f) {
+                                Modifier.blur(blurRadiusDp)
+                            } else Modifier
+                        )
+                        .background(Color.Black.copy(alpha = 0.35f * appAlpha))
+                )
             }
         }
     }
