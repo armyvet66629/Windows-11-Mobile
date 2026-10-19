@@ -777,18 +777,146 @@ fun PhoneTileBack(
 }
 
 @Composable
-fun MessagesLiveTile(tile: HomeTile, recentNotifications: List<com.example.windows11mobile.data.NotificationData> = emptyList()) {
-    val items = recentNotifications.map { Triple(it.sender ?: "Unknown", it.content ?: "", null) }
-    
-    if (items.isNotEmpty()) {
-        LiveTileList(
-            tile = tile,
-            items = items,
-            icon = FluentIcons.Message,
-            headerColor = Color(0xFF3498DB)
-        )
-    } else {
-        StandardTileContent(tile, null)
+fun MessagesLiveTile(
+    tile: HomeTile,
+    recentNotifications: List<NotificationData> = emptyList(),
+    recentSms: List<com.example.windows11mobile.data.SmsItem> = emptyList(),
+    defaultIconDrawable: Drawable? = null,
+    winResId: Int? = null,
+    tileOpacity: Float = 0.25f
+) {
+    val isLive = true
+
+    FlippingTileContainer(
+        isLive = isLive,
+        front = {
+            StandardTileContent(tile = tile, icon = defaultIconDrawable, winResId = winResId)
+        },
+        back = {
+            MessagesLiveTileBack(
+                tile = tile,
+                recentNotifications = recentNotifications,
+                recentSms = recentSms,
+                tileOpacity = tileOpacity
+            )
+        }
+    )
+}
+
+@Composable
+fun MessagesLiveTileBack(
+    tile: HomeTile,
+    recentNotifications: List<NotificationData> = emptyList(),
+    recentSms: List<com.example.windows11mobile.data.SmsItem> = emptyList(),
+    tileOpacity: Float = 0.25f
+) {
+    var currentIndex by remember { mutableIntStateOf(0) }
+
+    val messages = remember(recentNotifications, recentSms) {
+        if (recentNotifications.isNotEmpty()) {
+            recentNotifications
+        } else if (recentSms.isNotEmpty()) {
+            recentSms.map { sms ->
+                NotificationData(
+                    packageName = "com.google.android.apps.messaging",
+                    count = 1,
+                    summary = "${sms.sender}: ${sms.snippet}",
+                    sender = sms.sender,
+                    content = sms.snippet,
+                    postTime = sms.timestamp
+                )
+            }
+        } else emptyList()
+    }
+
+    LaunchedEffect(messages) {
+        if (messages.size > 1) {
+            while (true) {
+                delay(4000)
+                currentIndex = (currentIndex + 1) % messages.size
+            }
+        }
+    }
+
+    BoxWithConstraints(modifier = Modifier.fillMaxSize().padding(10.dp)) {
+        val isSmall = maxWidth < 150.dp
+
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Rounded.Message,
+                    contentDescription = null,
+                    tint = Color(0xFF3498DB),
+                    modifier = Modifier.size(if (isSmall) 16.dp else 20.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = tile.label.ifBlank { "Messaging" },
+                    style = if (isSmall) MaterialTheme.typography.labelMedium else MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            if (messages.isNotEmpty()) {
+                val notif = messages.getOrNull(currentIndex) ?: messages.first()
+
+                AnimatedContent(
+                    targetState = notif,
+                    transitionSpec = {
+                        slideInVertically { it } + fadeIn() togetherWith slideOutVertically { -it } + fadeOut()
+                    },
+                    label = "messagesRotate"
+                ) { item ->
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = item.sender ?: "Contact",
+                                style = if (isSmall) MaterialTheme.typography.labelSmall else MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (item.postTime > 0) {
+                                val sdf = remember(item.postTime) { SimpleDateFormat("h:mm a", Locale.getDefault()) }
+                                Text(
+                                    text = sdf.format(Date(item.postTime)),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                                )
+                            }
+                        }
+
+                        Text(
+                            text = item.content ?: item.summary ?: "",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            } else {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "No recent messages",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    )
+                }
+            }
+        }
     }
 }
 

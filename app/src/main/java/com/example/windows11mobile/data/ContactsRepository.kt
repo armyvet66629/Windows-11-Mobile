@@ -66,6 +66,15 @@ data class RecentCallItem(
     val timeAgo: String
 )
 
+data class SmsItem(
+    val id: String,
+    val sender: String,
+    val address: String,
+    val snippet: String,
+    val timestamp: Long,
+    val isRead: Boolean
+)
+
 enum class ActivityType {
     CALL, MESSAGE
 }
@@ -82,6 +91,9 @@ class ContactsRepository private constructor(private val context: Context) {
 
     private val _recentCalls = MutableStateFlow<List<RecentCallItem>>(emptyList())
     val recentCalls: StateFlow<List<RecentCallItem>> = _recentCalls.asStateFlow()
+
+    private val _recentSms = MutableStateFlow<List<SmsItem>>(emptyList())
+    val recentSms: StateFlow<List<SmsItem>> = _recentSms.asStateFlow()
 
     private val _lastSyncTime = MutableStateFlow(0L)
     val lastSyncTime: StateFlow<Long> = _lastSyncTime
@@ -373,8 +385,83 @@ class ContactsRepository private constructor(private val context: Context) {
             
         _recentActivity.value = sorted
         _phoneTileData.value = getPhoneTileData()
+        _recentSms.value = getRecentSms()
+        val unreadSms = getUnreadSmsCount()
+        BadgeRepository.setMessageBadge(unreadSms)
         _lastSyncTime.value = System.currentTimeMillis()
         Log.d("ContactsRepository", "RecentActivity: Update complete. Final count: ${sorted.size} at ${_lastSyncTime.value}")
+    }
+
+    fun getUnreadSmsCount(): Int {
+        val hasSms = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
+        if (!hasSms) return 0
+
+        return try {
+            val cursor = context.contentResolver.query(
+                Telephony.Sms.Inbox.CONTENT_URI,
+                arrayOf(Telephony.Sms._ID),
+                "${Telephony.Sms.READ} = 0",
+                null,
+                null
+            )
+            cursor?.use { it.count } ?: 0
+        } catch (e: Exception) {
+            0
+        }
+    }
+
+    fun getRecentSms(): List<SmsItem> {
+        val hasSms = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
+        if (!hasSms) return emptyList()
+
+        val list = mutableListOf<SmsItem>()
+        try {
+            val projection = arrayOf(
+                Telephony.Sms._ID,
+                Telephony.Sms.ADDRESS,
+                Telephony.Sms.BODY,
+                Telephony.Sms.DATE,
+                Telephony.Sms.READ
+            )
+            context.contentResolver.query(
+                Telephony.Sms.Inbox.CONTENT_URI,
+                projection,
+                null,
+                null,
+                "${Telephony.Sms.DATE} DESC LIMIT 5"
+            )?.use { cursor ->
+                val idIdx = cursor.getColumnIndex(Telephony.Sms._ID)
+                val addrIdx = cursor.getColumnIndex(Telephony.Sms.ADDRESS)
+                val bodyIdx = cursor.getColumnIndex(Telephony.Sms.BODY)
+                val dateIdx = cursor.getColumnIndex(Telephony.Sms.DATE)
+                val readIdx = cursor.getColumnIndex(Telephony.Sms.READ)
+
+                while (cursor.moveToNext()) {
+                    val id = if (idIdx != -1) cursor.getString(idIdx) ?: "" else ""
+                    val address = if (addrIdx != -1) cursor.getString(addrIdx) ?: "" else ""
+                    val body = if (bodyIdx != -1) cursor.getString(bodyIdx) ?: "" else ""
+                    val dateMs = if (dateIdx != -1) cursor.getLong(dateIdx) else System.currentTimeMillis()
+                    val isRead = if (readIdx != -1) cursor.getInt(readIdx) == 1 else true
+
+                    val contactName = getContactInfo(address).first ?: address.ifBlank { "Unknown" }
+
+                    list.add(
+                        SmsItem(
+                            id = id,
+                            sender = contactName,
+                            address = address,
+                            snippet = body,
+                            timestamp = dateMs,
+                            isRead = isRead
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("ContactsRepository", "Error querying recent SMS", e)
+        }
+
+        return list
     }
 
     fun getPhoneTileData(): PhoneTileData {
@@ -475,7 +562,7 @@ class ContactsRepository private constructor(private val context: Context) {
         } catch (_: Exception) {}
 
         return PhoneTileData(
-            missedCallsCount = if (missedCount > 0) missedCount else 1,
+            missedCallsCount = missedCount,
             voicemailCount = voicemailCount,
             recentCalls = calls
         )

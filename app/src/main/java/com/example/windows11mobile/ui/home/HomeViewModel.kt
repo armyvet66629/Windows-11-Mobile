@@ -41,6 +41,7 @@ class HomeViewModel(
     val contacts = contactsRepository.contacts
     val phoneTileData = contactsRepository.phoneTileData
     val recentCalls = contactsRepository.recentCalls
+    val recentSms = contactsRepository.recentSms
 
     private val blurRepository = BlurRepository.getInstance(context)
     val blurAmount: StateFlow<Dp> = blurRepository.blurAmount
