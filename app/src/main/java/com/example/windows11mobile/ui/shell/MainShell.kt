@@ -49,6 +49,7 @@ import com.example.windows11mobile.navigation.Dest
 import com.example.windows11mobile.ui.apps.AppDrawerScreen
 import com.example.windows11mobile.ui.apps.AppDrawerViewModel
 import com.example.windows11mobile.ui.apps.AppDrawerViewModelFactory
+import com.example.windows11mobile.ui.components.GlobalBlurLayer
 import com.example.windows11mobile.ui.home.HomeScreen
 import com.example.windows11mobile.ui.home.HomeViewModel
 import com.example.windows11mobile.ui.news.NewsFeedScreen
@@ -252,6 +253,8 @@ fun MainShell(
                         alpha = homeAlpha
                     }
             ) {
+                GlobalBlurLayer(viewModel = homeViewModel)
+
                 if (currentRoute in listOf(Dest.Desktop, Dest.AppDrawer, Dest.NewsFeed, null)) {
                     HorizontalPager(
                         state = pagerState,

@@ -553,13 +553,22 @@ private fun PhotoItem(photo: Any, size: TileSize, tileOpacity: Float = 1f) {
 fun PhoneLiveTile(
     tile: HomeTile,
     phoneData: PhoneTileData = PhoneTileData(),
+    recentCalls: List<com.example.windows11mobile.data.RecentCallItem> = emptyList(),
     recentNotifications: List<NotificationData> = emptyList(),
     defaultIconDrawable: Drawable? = null,
     winResId: Int? = null,
     tileOpacity: Float = 0.25f
 ) {
+    val calls = remember(phoneData.recentCalls, recentCalls) {
+        if (recentCalls.isNotEmpty()) recentCalls else phoneData.recentCalls.map { 
+            com.example.windows11mobile.data.RecentCallItem(it.name, it.number, if (it.isMissed) android.provider.CallLog.Calls.MISSED_TYPE else android.provider.CallLog.Calls.INCOMING_TYPE, System.currentTimeMillis(), it.timeFormatted)
+        }
+    }.take(3)
+
+    val isLive = true
+
     FlippingTileContainer(
-        isLive = true,
+        isLive = isLive,
         front = {
             PhoneTileFront(
                 tile = tile,
@@ -572,7 +581,7 @@ fun PhoneLiveTile(
             PhoneTileBack(
                 tile = tile,
                 phoneData = phoneData,
-                recentNotifications = recentNotifications,
+                recentCalls = calls,
                 tileOpacity = tileOpacity
             )
         }
@@ -654,41 +663,6 @@ fun PhoneTileFront(
                 )
             }
         }
-
-        if (totalCount > 0) {
-            Row(
-                modifier = Modifier.align(Alignment.TopEnd),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (phoneData.voicemailCount > 0) {
-                    Box(
-                        modifier = Modifier
-                            .clip(CircleShape)
-                            .background(Color(0xFFE67E22))
-                            .padding(horizontal = 6.dp, vertical = 2.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Rounded.Voicemail, contentDescription = "Voicemail", tint = Color.White, modifier = Modifier.size(12.dp))
-                            Spacer(modifier = Modifier.width(2.dp))
-                            Text("${phoneData.voicemailCount}", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color.White)
-                        }
-                    }
-                }
-                if (phoneData.missedCallsCount > 0) {
-                    Box(
-                        modifier = Modifier
-                            .clip(CircleShape)
-                            .background(Color(0xFFE74C3C))
-                            .padding(horizontal = 6.dp, vertical = 2.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("${phoneData.missedCallsCount}", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color.White)
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -696,25 +670,23 @@ fun PhoneTileFront(
 fun PhoneTileBack(
     tile: HomeTile,
     phoneData: PhoneTileData,
+    recentCalls: List<com.example.windows11mobile.data.RecentCallItem> = emptyList(),
     recentNotifications: List<NotificationData> = emptyList(),
     tileOpacity: Float = 0.25f
 ) {
-    var currentIndex by remember { mutableIntStateOf(0) }
-    val calls = phoneData.recentCalls
-
-    LaunchedEffect(calls) {
-        if (calls.size > 1) {
-            while (true) {
-                delay(4000)
-                currentIndex = (currentIndex + 1) % calls.size
-            }
+    val calls = remember(phoneData.recentCalls, recentCalls) {
+        if (recentCalls.isNotEmpty()) recentCalls else phoneData.recentCalls.map { 
+            com.example.windows11mobile.data.RecentCallItem(it.name, it.number, if (it.isMissed) android.provider.CallLog.Calls.MISSED_TYPE else android.provider.CallLog.Calls.INCOMING_TYPE, System.currentTimeMillis(), it.timeFormatted)
         }
-    }
+    }.take(3)
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize().padding(10.dp)) {
         val isSmall = maxWidth < 150.dp
         
-        Column(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     imageVector = Icons.Rounded.Phone,
@@ -724,83 +696,81 @@ fun PhoneTileBack(
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = "Phone",
+                    text = "Missed Calls",
                     style = if (isSmall) MaterialTheme.typography.labelMedium else MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
-                
-                Spacer(modifier = Modifier.weight(1f))
-                
-                if (phoneData.voicemailCount > 0) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.Voicemail, contentDescription = "Voicemail", tint = Color(0xFFE67E22), modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(2.dp))
-                        Text("${phoneData.voicemailCount}", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color(0xFFE67E22))
-                    }
-                }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(2.dp))
 
             if (calls.isNotEmpty()) {
-                val item = calls.getOrNull(currentIndex) ?: calls.first()
-                
-                AnimatedContent(
-                    targetState = item,
-                    transitionSpec = {
-                        slideInVertically { it } + fadeIn() togetherWith slideOutVertically { -it } + fadeOut()
-                    },
-                    label = "phoneCallRotate"
-                ) { call ->
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                calls.forEach { call ->
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 2.dp),
+                        verticalArrangement = Arrangement.spacedBy(1.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             Text(
-                                text = call.name,
-                                style = if (isSmall) MaterialTheme.typography.labelMedium else MaterialTheme.typography.bodyMedium,
+                                text = call.displayName,
+                                style = if (isSmall) MaterialTheme.typography.labelSmall else MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.Bold,
-                                color = if (call.isMissed) Color(0xFFE74C3C) else MaterialTheme.colorScheme.onSurface,
+                                color = if (call.callType == android.provider.CallLog.Calls.MISSED_TYPE) Color(0xFFE74C3C) else MaterialTheme.colorScheme.onSurface,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f)
                             )
-                            if (call.timeFormatted.isNotBlank()) {
-                                Text(
-                                    text = call.timeFormatted,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                                )
-                            }
+                            Text(
+                                text = call.timeAgo,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                            )
                         }
-                        
                         Text(
-                            text = call.summary,
+                            text = call.phoneNumber.ifBlank { "Unknown number" },
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (call.isMissed) Color(0xFFE74C3C) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
             } else if (recentNotifications.isNotEmpty()) {
-                val firstNotif = recentNotifications.first()
-                Column {
-                    Text(
-                        text = firstNotif.sender ?: "Call",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = firstNotif.content ?: "Missed call",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                    )
+                recentNotifications.take(3).forEach { notif ->
+                    Column(modifier = Modifier.padding(vertical = 2.dp)) {
+                        Text(
+                            text = notif.sender ?: "Call",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1
+                        )
+                        Text(
+                            text = notif.content ?: "Missed call",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            maxLines = 1
+                        )
+                    }
                 }
             } else {
-                Text(
-                    text = "No recent calls",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                )
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "No recent calls",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    )
+                }
             }
         }
     }
@@ -2161,6 +2131,109 @@ fun GoogleNewsLiveTileBack(
             ) {
                 Text(
                     text = "Loading Google News...",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun GoogleRecentCallsTileBack(
+    calls: List<com.example.windows11mobile.data.RecentCallItem>,
+    tileOpacity: Float = 0.25f
+) {
+    var currentIndex by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(calls) {
+        if (calls.size > 1) {
+            while (true) {
+                delay(4000)
+                currentIndex = (currentIndex + 1) % calls.size
+            }
+        }
+    }
+
+    BoxWithConstraints(modifier = Modifier.fillMaxSize().padding(10.dp)) {
+        val isSmall = maxWidth < 150.dp
+        
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Rounded.Phone,
+                    contentDescription = "Recent Calls",
+                    tint = Color(0xFF2ECC71),
+                    modifier = Modifier.size(if (isSmall) 16.dp else 20.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "Recent Calls",
+                    style = if (isSmall) MaterialTheme.typography.labelMedium else MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            if (calls.isNotEmpty()) {
+                val call = calls.getOrNull(currentIndex) ?: calls.first()
+
+                AnimatedContent(
+                    targetState = call,
+                    transitionSpec = {
+                        slideInVertically { it } + fadeIn() togetherWith slideOutVertically { -it } + fadeOut()
+                    },
+                    label = "googleRecentCallRotate"
+                ) { item ->
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                val callIcon = Icons.Rounded.Phone
+                                val iconTint = if (item.callType == android.provider.CallLog.Calls.MISSED_TYPE) Color(0xFFE74C3C) else Color(0xFF2ECC71)
+
+                                Icon(
+                                    imageVector = callIcon,
+                                    contentDescription = null,
+                                    tint = iconTint,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = item.displayName,
+                                    style = if (isSmall) MaterialTheme.typography.labelMedium else MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (item.callType == android.provider.CallLog.Calls.MISSED_TYPE) Color(0xFFE74C3C) else MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+
+                            Text(
+                                text = item.timeAgo,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            )
+                        }
+
+                        Text(
+                            text = item.phoneNumber,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                        )
+                    }
+                }
+            } else {
+                Text(
+                    text = "No recent calls",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                 )

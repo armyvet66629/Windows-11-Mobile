@@ -10,8 +10,10 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.CreationExtras
 import com.example.windows11mobile.data.AppInfo
+import com.example.windows11mobile.data.BlurRepository
 import com.example.windows11mobile.data.RealAppRepository
 import com.example.windows11mobile.data.SettingsRepository
+import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -218,6 +220,7 @@ class SettingsViewModel(
     fun setTileBlurRadius(radius: Float) {
         viewModelScope.launch {
             repository.setTileBlurRadius(radius)
+            BlurRepository.getInstance(getApplication()).setBlur(radius.dp)
         }
     }
 

@@ -39,11 +39,19 @@ class WindowsNotificationListener : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         super.onNotificationPosted(sbn)
+        val pkg = sbn?.packageName?.lowercase() ?: ""
+        if (pkg.contains("messaging") || pkg.contains("message") || pkg.contains("sms") || pkg.contains("whatsapp") || pkg.contains("telegram") || pkg.contains("signal")) {
+            com.example.windows11mobile.data.BadgeRepository.incrementMessageBadge()
+        }
         updateNotifications()
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {
         super.onNotificationRemoved(sbn)
+        val pkg = sbn?.packageName?.lowercase() ?: ""
+        if (pkg.contains("messaging") || pkg.contains("message") || pkg.contains("sms") || pkg.contains("whatsapp") || pkg.contains("telegram") || pkg.contains("signal")) {
+            com.example.windows11mobile.data.BadgeRepository.decrementMessageBadge()
+        }
         updateNotifications()
     }
 

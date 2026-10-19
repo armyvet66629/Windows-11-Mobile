@@ -131,6 +131,7 @@ fun HomeScreen(
     val availableWidgets by viewModel.availableWidgets.collectAsStateWithLifecycle()
     val topNews by viewModel.topNews.collectAsStateWithLifecycle()
     val googleNews by viewModel.googleNews.collectAsStateWithLifecycle()
+    val googleRecentCalls by viewModel.googleRecentCalls.collectAsStateWithLifecycle()
     val recentPhotos by viewModel.recentPhotos.collectAsStateWithLifecycle()
     val openFolderId by viewModel.openFolderId.collectAsStateWithLifecycle()
     val tilePictureEnabled by viewModel.tilePictureEnabled.collectAsStateWithLifecycle()
@@ -143,6 +144,7 @@ fun HomeScreen(
     val squareTilesEnabled by viewModel.squareTilesEnabled.collectAsStateWithLifecycle()
     val selectedIconPack by viewModel.selectedIconPack.collectAsStateWithLifecycle()
     val phoneData by viewModel.phoneTileData.collectAsStateWithLifecycle()
+    val recentCalls by viewModel.recentCalls.collectAsStateWithLifecycle()
     val isEditModeState = rememberUpdatedState(isEditMode)
     val swipeDownEnabled by viewModel.swipeDownForNotifications.collectAsStateWithLifecycle()
     val showMoreTiles by viewModel.showMoreTiles.collectAsStateWithLifecycle()
@@ -609,7 +611,7 @@ fun HomeScreen(
                                     parallaxX = layoutParallaxX, parallaxY = layoutParallaxY, scrollOffset = scrollPx, screenWidthPx = screenWidthPx, screenHeightPx = screenHeightPx, 
                                     noiseBitmap = noiseBitmap, onResize = { viewModel.resizeTile(tile.id) }, onPlayPause = { viewModel.mediaPlayPause() }, 
                                     onSkipNext = { viewModel.mediaSkipNext() }, onSkipPrevious = { viewModel.mediaSkipPrevious() }, 
-                                    topNews = topNews, googleNews = googleNews, widgetHost = viewModel.appWidgetHost, modifier = Modifier.scale(hoverScale)
+                                    topNews = topNews, googleNews = googleNews, googleRecentCalls = googleRecentCalls, recentCalls = recentCalls, widgetHost = viewModel.appWidgetHost, modifier = Modifier.scale(hoverScale)
                                 )
                                 if (isEditMode && !tile.isSpacer) {
                                     Box(modifier = Modifier.matchParentSize().zIndex(20f), contentAlignment = Alignment.BottomEnd) {
@@ -650,7 +652,7 @@ fun HomeScreen(
                         parallaxX = layoutParallaxX, parallaxY = layoutParallaxY, scrollOffset = scrollPx, screenWidthPx = screenWidthPx, screenHeightPx = screenHeightPx, 
                         noiseBitmap = noiseBitmap, onResize = { viewModel.resizeTile(tile.id) }, onPlayPause = { viewModel.mediaPlayPause() }, 
                         onSkipNext = { viewModel.mediaSkipNext() }, onSkipPrevious = { viewModel.mediaSkipPrevious() }, 
-                        topNews = topNews, widgetHost = viewModel.appWidgetHost
+                        topNews = topNews, recentCalls = recentCalls, widgetHost = viewModel.appWidgetHost
                     )
                 }
             }
@@ -944,10 +946,10 @@ fun HomeTileItem(
     weatherAppPackage: String? = null, recentPhotos: List<Uri> = emptyList(), 
     tilePictureEnabled: Boolean = false, tileBlurRadius: Float = 60f, homeScreenBlurEnabled: Boolean = true, 
     accentColorOverlayEnabled: Boolean = false, solidTilesEnabled: Boolean = false, squareTilesEnabled: Boolean = false,
-    selectedIconPack: String = "default", phoneData: PhoneTileData = PhoneTileData(),
+    selectedIconPack: String = "default", phoneData: PhoneTileData = PhoneTileData(), recentCalls: List<RecentCallItem> = emptyList(),
     wallpaperPainter: Painter? = null, wallpaperBitmap: ImageBitmap? = null, parallaxX: Float = 0f, parallaxY: Float = 0f, scrollOffset: Float = 0f, screenWidthPx: Float = 0f, screenHeightPx: Float = 0f, 
     noiseBitmap: ImageBitmap? = null, onResize: () -> Unit = {}, onPlayPause: () -> Unit = {}, onSkipNext: () -> Unit = {}, 
-    onSkipPrevious: () -> Unit = {}, topNews: List<NewsArticle> = emptyList(), googleNews: List<NewsArticle> = emptyList(), widgetHost: AppWidgetHost? = null
+    onSkipPrevious: () -> Unit = {}, topNews: List<NewsArticle> = emptyList(), googleNews: List<NewsArticle> = emptyList(), googleRecentCalls: List<RecentCallItem> = emptyList(), widgetHost: AppWidgetHost? = null
 ) {
     val ratio = tile.spanX.toFloat() / tile.spanY.toFloat()
     val context = LocalContext.current
@@ -970,13 +972,34 @@ fun HomeTileItem(
     val tileShape = RoundedCornerShape(cornerRadius)
     val accentColor = MaterialTheme.colorScheme.primary
 
-    Box(modifier = modifier.onGloballyPositioned { coords -> tilePosition = coords.positionInWindow() }) {
+    var isPressed by remember { mutableStateOf(false) }
+    val pressScale by animateFloatAsState(
+        targetValue = if (isPressed) 0.95f else 1f,
+        animationSpec = tween(200, easing = FastOutSlowInEasing),
+        label = "tilePressScale"
+    )
+
+    Box(
+        modifier = modifier
+            .onGloballyPositioned { coords -> tilePosition = coords.positionInWindow() }
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    awaitFirstDown()
+                    isPressed = true
+                    try {
+                        waitForUpOrCancellation()
+                    } finally {
+                        isPressed = false
+                    }
+                }
+            }
+    ) {
         if (tile.isSpacer) {
             if (isEditMode) Box(modifier = Modifier.aspectRatio(ratio).clip(tileShape).border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f), tileShape).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.02f)))
             else Spacer(modifier = Modifier.aspectRatio(ratio))
         } else if (tile.isWidget && tile.widgetId != null) {
             Box {
-                Box(modifier = Modifier.aspectRatio(ratio).scale(if (isHovered) 1.1f else 1.0f).clip(tileShape).then(if (accentColorOverlayEnabled) Modifier.border(1.dp, accentColor.copy(alpha = 0.85f), tileShape) else Modifier).then(if (isHovered) Modifier.border(2.dp, accentColor, tileShape) else Modifier)) {
+                Box(modifier = Modifier.aspectRatio(ratio).scale(if (isHovered) 1.1f else pressScale).clip(tileShape).then(if (accentColorOverlayEnabled) Modifier.border(1.dp, accentColor.copy(alpha = 0.85f), tileShape) else Modifier).then(if (isHovered) Modifier.border(2.dp, accentColor, tileShape) else Modifier)) {
                     WidgetHostItem(widgetId = tile.widgetId, sharedHost = widgetHost, size = tile.size)
                 }
                 if (isEditMode) {
@@ -997,7 +1020,7 @@ fun HomeTileItem(
             Box(
                 modifier = Modifier
                     .aspectRatio(ratio)
-                    .scale(if (isHovered) 1.1f else 1.0f)
+                    .scale(if (isHovered) 1.1f else pressScale)
                     .clip(tileShape)
                     .then(if (accentColorOverlayEnabled) Modifier.border(1.dp, accentColor.copy(alpha = 0.85f), tileShape) else Modifier)
                     .then(if (isHovered) Modifier.border(2.dp, accentColor, tileShape) else Modifier)
@@ -1166,7 +1189,7 @@ fun HomeTileItem(
 
                 // Layer 5: Tile Content (Icon + Label)
                 Box(modifier = Modifier.fillMaxSize()) { 
-                    TileDispatcher(tile, weatherData, recentNotifications, allNotifications, currentMedia, calendarEvents, contacts, weatherAppPackage, recentPhotos, icon, onPlayPause, onSkipNext, onSkipPrevious, topNews, currentOpacity, tilePictureEnabled, phoneData = phoneData, googleNews = googleNews) 
+                    TileDispatcher(tile, weatherData, recentNotifications, allNotifications, currentMedia, calendarEvents, contacts, weatherAppPackage, recentPhotos, icon, onPlayPause, onSkipNext, onSkipPrevious, topNews, currentOpacity, tilePictureEnabled, phoneData = phoneData, googleNews = googleNews, googleRecentCalls = googleRecentCalls, recentCalls = recentCalls) 
                 }
 
                 if (isEditMode) {
@@ -1256,7 +1279,9 @@ private fun TileDispatcher(
     icon: Drawable?, onPlayPause: () -> Unit, onSkipNext: () -> Unit, onSkipPrevious: () -> Unit, topNews: List<NewsArticle>,
     tileOpacity: Float, tilePictureEnabled: Boolean = false,
     phoneData: PhoneTileData = PhoneTileData(),
-    googleNews: List<NewsArticle> = emptyList()
+    googleNews: List<NewsArticle> = emptyList(),
+    googleRecentCalls: List<RecentCallItem> = emptyList(),
+    recentCalls: List<RecentCallItem> = emptyList()
 ) {
     val context = LocalContext.current
     val winResId = remember(tile.packageName, tile.label) {
@@ -1267,7 +1292,7 @@ private fun TileDispatcher(
 
     when {
         tile.isFolder -> FolderTileContent(tile, allNotifications, tilePictureEnabled)
-        isPhoneApp -> PhoneLiveTile(tile = tile, phoneData = phoneData, recentNotifications = recentNotifications, defaultIconDrawable = icon, winResId = winResId, tileOpacity = tileOpacity)
+        isPhoneApp -> PhoneLiveTile(tile = tile, phoneData = phoneData, recentCalls = recentCalls, recentNotifications = recentNotifications, defaultIconDrawable = icon, winResId = winResId, tileOpacity = tileOpacity)
         isMailApp -> GmailLiveTile(tile = tile, recentNotifications = recentNotifications, defaultIconDrawable = icon, winResId = winResId, tileOpacity = tileOpacity)
         tile.specialType == HomeTile.TYPE_CLOCK_WEATHER -> FlippingTileContainer(isLive = true, front = { ClockWeatherTileContent(tile = tile, weatherData = weatherData, onWeatherClick = { if (weatherAppPackage == "web") context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=weather"))) else context.packageManager.getLaunchIntentForPackage(weatherAppPackage ?: "")?.let { context.startActivity(it) } }) }, back = { WeatherForecastBack(weatherData = weatherData) })
         tile.specialType == HomeTile.TYPE_CLOCK || tile.packageName?.lowercase()?.contains("clock") == true -> ClockTileContent(tile)
@@ -1286,7 +1311,13 @@ private fun TileDispatcher(
                 FlippingTileContainer(isLive = topNews.isNotEmpty(), front = { StandardTileContent(tile, icon) }, back = { NewsLiveTileBack(articles = topNews, tileOpacity = tileOpacity) })
             }
         }
-        tile.packageName == "com.google.android.googlequicksearchbox" && (tile.size != TileSize.SMALL) -> { FlippingTileContainer(isLive = googleNews.isNotEmpty(), front = { StandardTileContent(tile, icon, winResId) }, back = { GoogleNewsLiveTileBack(articles = googleNews, tileOpacity = tileOpacity) }) }
+        tile.packageName == "com.google.android.googlequicksearchbox" && (tile.size != TileSize.SMALL) -> { 
+            FlippingTileContainer(
+                isLive = googleRecentCalls.isNotEmpty(), 
+                front = { StandardTileContent(tile, icon, winResId) }, 
+                back = { GoogleRecentCallsTileBack(calls = googleRecentCalls, tileOpacity = tileOpacity) }
+            ) 
+        }
         isCommunicationApp(tile.packageName) && (tile.size == TileSize.WIDE || tile.size == TileSize.LARGE) -> { 
             val pkg = tile.packageName ?: ""
             val isMusic = isMusicApp(pkg) && currentMedia?.packageName == pkg

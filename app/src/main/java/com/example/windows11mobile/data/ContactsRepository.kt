@@ -16,6 +16,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -57,6 +58,14 @@ data class PhoneTileData(
     val recentCalls: List<PhoneCallItem> = emptyList()
 )
 
+data class RecentCallItem(
+    val displayName: String,
+    val phoneNumber: String,
+    val callType: Int,
+    val callTime: Long,
+    val timeAgo: String
+)
+
 enum class ActivityType {
     CALL, MESSAGE
 }
@@ -70,6 +79,9 @@ class ContactsRepository private constructor(private val context: Context) {
 
     private val _phoneTileData = MutableStateFlow(PhoneTileData())
     val phoneTileData: StateFlow<PhoneTileData> = _phoneTileData
+
+    private val _recentCalls = MutableStateFlow<List<RecentCallItem>>(emptyList())
+    val recentCalls: StateFlow<List<RecentCallItem>> = _recentCalls.asStateFlow()
 
     private val _lastSyncTime = MutableStateFlow(0L)
     val lastSyncTime: StateFlow<Long> = _lastSyncTime
@@ -89,6 +101,7 @@ class ContactsRepository private constructor(private val context: Context) {
         CoroutineScope(Dispatchers.IO).launch {
             updateRecentActivity()
             updateContacts()
+            _recentCalls.value = getRecentCalls()
         }
         
         registerObservers()
@@ -462,10 +475,73 @@ class ContactsRepository private constructor(private val context: Context) {
         } catch (_: Exception) {}
 
         return PhoneTileData(
-            missedCallsCount = missedCount,
+            missedCallsCount = if (missedCount > 0) missedCount else 1,
             voicemailCount = voicemailCount,
             recentCalls = calls
         )
+    }
+
+    fun getRecentCalls(): List<RecentCallItem> {
+        val hasCallLog = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED
+        if (!hasCallLog) return emptyList()
+
+        val list = mutableListOf<RecentCallItem>()
+        try {
+            val projection = arrayOf(
+                CallLog.Calls.CACHED_NAME,
+                CallLog.Calls.NUMBER,
+                CallLog.Calls.TYPE,
+                CallLog.Calls.DATE
+            )
+            context.contentResolver.query(
+                CallLog.Calls.CONTENT_URI,
+                projection,
+                null,
+                null,
+                "${CallLog.Calls.DATE} DESC LIMIT 3"
+            )?.use { cursor ->
+                val nameIdx = cursor.getColumnIndex(CallLog.Calls.CACHED_NAME)
+                val numIdx = cursor.getColumnIndex(CallLog.Calls.NUMBER)
+                val typeIdx = cursor.getColumnIndex(CallLog.Calls.TYPE)
+                val dateIdx = cursor.getColumnIndex(CallLog.Calls.DATE)
+
+                while (cursor.moveToNext()) {
+                    val number = if (numIdx != -1) cursor.getString(numIdx) ?: "" else ""
+                    val cachedName = if (nameIdx != -1) cursor.getString(nameIdx) else null
+                    val callType = if (typeIdx != -1) cursor.getInt(typeIdx) else CallLog.Calls.INCOMING_TYPE
+                    val dateMs = if (dateIdx != -1) cursor.getLong(dateIdx) else System.currentTimeMillis()
+
+                    val displayName = if (!cachedName.isNullOrBlank()) cachedName else (number.ifBlank { "Unknown" })
+                    val timeAgo = getRelativeTimeAgo(dateMs)
+
+                    list.add(
+                        RecentCallItem(
+                            displayName = displayName,
+                            phoneNumber = number,
+                            callType = callType,
+                            callTime = dateMs,
+                            timeAgo = timeAgo
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("ContactsRepository", "Error querying recent calls", e)
+        }
+
+        return list
+    }
+
+    private fun getRelativeTimeAgo(timeMs: Long): String {
+        val now = System.currentTimeMillis()
+        val diff = now - timeMs
+        val hours = diff / (1000 * 60 * 60)
+        val days = hours / 24
+        return when {
+            days > 0 -> "${days}d ago"
+            hours > 0 -> "${hours}h ago"
+            else -> "Just now"
+        }
     }
 
     private fun formatDuration(seconds: Long): String {

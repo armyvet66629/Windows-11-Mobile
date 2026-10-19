@@ -15,6 +15,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import com.example.windows11mobile.data.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -38,6 +40,14 @@ class HomeViewModel(
     private val contactsRepository = ContactsRepository.getInstance(context)
     val contacts = contactsRepository.contacts
     val phoneTileData = contactsRepository.phoneTileData
+    val recentCalls = contactsRepository.recentCalls
+
+    private val blurRepository = BlurRepository.getInstance(context)
+    val blurAmount: StateFlow<Dp> = blurRepository.blurAmount
+
+    fun setBlur(amount: Dp) {
+        blurRepository.setBlur(amount)
+    }
 
     private val calendarRepository = CalendarRepository(context)
     val calendarEvents = calendarRepository.events
@@ -105,6 +115,22 @@ class HomeViewModel(
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val googleRecentCalls: StateFlow<List<RecentCallItem>> = flow {
+        while (true) {
+            val calls = try {
+                contactsRepository.getRecentCalls()
+            } catch (e: Exception) {
+                emptyList()
+            }
+            emit(calls)
+            delay(5000)
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun getRecentCalls(): List<RecentCallItem> {
+        return contactsRepository.getRecentCalls()
+    }
+
     fun refreshNews() {
         _newsTrigger.value = System.currentTimeMillis()
     }
@@ -122,8 +148,10 @@ class HomeViewModel(
         emit(grouped)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
+    val messageBadgeCount: StateFlow<Int> = BadgeRepository.messageBadgeCount
+
     private val _rawTiles = MutableStateFlow<List<HomeTile>>(emptyList())
-    val tiles = combine(_rawTiles, NotificationManager.notifications, phoneTileData, settingsRepository.hiddenNativeWidgets) { tiles, notifications, phoneData, hidden ->
+    val tiles = combine(_rawTiles, NotificationManager.notifications, phoneTileData, BadgeRepository.messageBadgeCount, settingsRepository.hiddenNativeWidgets) { tiles, notifications, phoneData, msgBadge, hidden ->
         fun findAppNotification(tile: HomeTile): AppNotificationData? {
             val pkg = tile.packageName ?: return null
             
@@ -143,6 +171,7 @@ class HomeViewModel(
 
         fun mapTile(tile: HomeTile): HomeTile {
             val isPhone = tile.specialType == "phone" || tile.packageName?.lowercase()?.let { it.contains("dialer") || it.contains("phone") } == true
+            val isMessaging = tile.specialType == "messages" || tile.packageName?.lowercase()?.let { it.contains("messaging") || it.contains("message") || it.contains("sms") } == true
             val appNotification = findAppNotification(tile)
             val lastNotification = appNotification?.recentNotifications?.firstOrNull()
             
@@ -154,6 +183,9 @@ class HomeViewModel(
                 val phoneCallsCount = phoneData.missedCallsCount + phoneData.voicemailCount
                 val notifCount = appNotification?.totalCount ?: 0
                 maxOf(phoneCallsCount, notifCount)
+            } else if (isMessaging) {
+                val notifCount = appNotification?.totalCount ?: 0
+                maxOf(notifCount, msgBadge)
             } else {
                 appNotification?.totalCount ?: 0
             }

@@ -231,7 +231,10 @@ fun AdvancedFluentMenu(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             IconButton(
-                                onClick = onClearNotifications,
+                                onClick = {
+                                    onClearNotifications()
+                                    com.example.windows11mobile.data.BadgeRepository.clearMessageBadge()
+                                },
                                 modifier = Modifier.size(24.dp)
                             ) {
                                 Icon(
