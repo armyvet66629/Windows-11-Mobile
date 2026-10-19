@@ -813,20 +813,28 @@ fun MessagesLiveTileBack(
     var currentIndex by remember { mutableIntStateOf(0) }
 
     val messages = remember(recentNotifications, recentSms) {
-        if (recentNotifications.isNotEmpty()) {
-            recentNotifications
-        } else if (recentSms.isNotEmpty()) {
-            recentSms.map { sms ->
-                NotificationData(
-                    packageName = "com.google.android.apps.messaging",
-                    count = 1,
-                    summary = "${sms.sender}: ${sms.snippet}",
-                    sender = sms.sender,
-                    content = sms.snippet,
-                    postTime = sms.timestamp
-                )
-            }
-        } else emptyList()
+        val validNotifs = recentNotifications.filter { notif ->
+            val sender = notif.sender?.lowercase() ?: ""
+            val body = notif.content?.lowercase() ?: ""
+            !body.contains("chat features") && !body.contains("connected") && !body.contains("running in background") && !sender.contains("system")
+        }
+
+        val convertedSms = recentSms.map { sms ->
+            NotificationData(
+                packageName = "com.google.android.apps.messaging",
+                count = if (sms.isRead) 0 else 1,
+                summary = "${sms.sender}: ${sms.snippet}",
+                sender = sms.sender,
+                content = sms.snippet,
+                postTime = sms.timestamp,
+                address = sms.address
+            )
+        }
+
+        (validNotifs + convertedSms)
+            .distinctBy { "${it.sender}_${it.content}" }
+            .sortedByDescending { it.postTime }
+            .take(5)
     }
 
     LaunchedEffect(messages) {
@@ -893,6 +901,16 @@ fun MessagesLiveTileBack(
                                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                                 )
                             }
+                        }
+
+                        if (!item.address.isNullOrBlank()) {
+                            Text(
+                                text = item.address,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
 
                         Text(

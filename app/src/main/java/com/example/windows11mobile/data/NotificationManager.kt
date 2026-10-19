@@ -13,7 +13,8 @@ data class NotificationData(
     val content: String? = null,
     val postTime: Long = 0L,
     val largeIcon: Bitmap? = null,
-    val bigPicture: Bitmap? = null
+    val bigPicture: Bitmap? = null,
+    val address: String? = null
 )
 
 data class AppNotificationData(
